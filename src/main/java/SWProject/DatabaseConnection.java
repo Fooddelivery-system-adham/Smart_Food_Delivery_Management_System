@@ -10,6 +10,7 @@ public class DatabaseConnection {
 
     private static final Properties properties = new Properties();
 
+    // This block runs once when the program starts to read the configuration file
     static {
         try (InputStream input = DatabaseConnection.class
                 .getClassLoader()
@@ -27,6 +28,7 @@ public class DatabaseConnection {
         }
     }
 
+    // Creates and returns a connection to the database
     public static Connection getConnection() throws SQLException {
         String url = properties.getProperty("db.url");
         String user = properties.getProperty("db.user");
