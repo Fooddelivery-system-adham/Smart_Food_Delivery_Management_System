@@ -3,22 +3,34 @@ package SWProject;
 import java.util.List;
 
 public class RestaurantService {
-    private final RestaurantRepository repository;
 
-    public RestaurantService(RestaurantRepository repository) {
-        this.repository = repository;
+    private final RestaurantRepository restaurantRepository;
+
+    public RestaurantService(RestaurantRepository restaurantRepository) {
+        this.restaurantRepository = restaurantRepository;
     }
 
-    public List<Restaurant> getOpenRestaurants() { return repository.getOpenRestaurants(); }
-    public List<Restaurant> getAllRestaurants() { return repository.findAll(); }
+    // For Customer (US1.2)
+    public List<Restaurant> getOpenRestaurants() {
+        return restaurantRepository.findOpenRestaurants();
+    }
 
-    public boolean updateRestaurantStatus(int restaurantId, String status) {
-        if (status == null) return false;
-        String clean = status.trim().toUpperCase();
-        if (!clean.equals("OPEN") && !clean.equals("CLOSED")) {
+    // For Manager
+    public List<Restaurant> getAllRestaurants() {
+        return restaurantRepository.findAll();
+    }
+
+    public boolean updateRestaurantStatus(int restaurantId, String newStatus) {
+        if (newStatus == null) {
+            return false;
+        }
+
+        String cleanStatus = newStatus.trim().toUpperCase();
+        if (!cleanStatus.equals("OPEN") && !cleanStatus.equals("CLOSED")) {
             System.out.println("Invalid status! Must be OPEN or CLOSED.");
             return false;
         }
-        return repository.updateStatus(restaurantId, clean);
+
+        return restaurantRepository.updateStatus(restaurantId, cleanStatus);
     }
 }

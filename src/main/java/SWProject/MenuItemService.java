@@ -3,27 +3,34 @@ package SWProject;
 import java.util.List;
 
 public class MenuItemService {
-    private final MenuItemRepository repository;
 
-    public MenuItemService(MenuItemRepository repository) {
-        this.repository = repository;
+    private final MenuItemRepository menuItemRepository;
+
+    public MenuItemService(MenuItemRepository menuItemRepository) {
+        this.menuItemRepository = menuItemRepository;
     }
 
-    public List<MenuItem> getMenuItemsByRestaurant(int restaurantId) {
-        return repository.findByRestaurantId(restaurantId);
-    }
-
+    // For Customer (US1.3)
     public List<MenuItem> getAvailableMenuItems(int restaurantId) {
-        return repository.findAvailableByRestaurantId(restaurantId);
+        return menuItemRepository.findAvailableByRestaurantId(restaurantId);
     }
 
-    public boolean updateMenuItemStatus(int itemId, String status) {
-        if (status == null) return false;
-        String clean = status.trim().toUpperCase();
+    // For Manager
+    public List<MenuItem> getMenuItemsByRestaurant(int restaurantId) {
+        return menuItemRepository.findByRestaurantId(restaurantId);
+    }
+
+    public boolean updateMenuItemStatus(int itemId, String newStatus) {
+        if (newStatus == null) {
+            return false;
+        }
+
+        String clean = newStatus.trim().toUpperCase();
         if (!clean.equals("AVAILABLE") && !clean.equals("UNAVAILABLE")) {
             System.out.println("Invalid status! Use AVAILABLE or UNAVAILABLE.");
             return false;
         }
-        return repository.updateStatus(itemId, clean);
+
+        return menuItemRepository.updateStatus(itemId, clean);
     }
 }

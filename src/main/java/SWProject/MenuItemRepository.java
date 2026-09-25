@@ -5,52 +5,79 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MenuItemRepository {
-    private static final String SCHEMA = "\"SWproject\"";
 
-    public List<MenuItem> findByRestaurantId(int restaurantId) {
-        return findByRestaurantId(restaurantId, false);
-    }
-
+    // US1.3: Get AVAILABLE menu items for a restaurant (For Customer)
     public List<MenuItem> findAvailableByRestaurantId(int restaurantId) {
-        return findByRestaurantId(restaurantId, true);
-    }
-
-    private List<MenuItem> findByRestaurantId(int restaurantId, boolean availableOnly) {
         List<MenuItem> items = new ArrayList<>();
-        String sql = "SELECT item_id, restaurant_id, name, price, status FROM " + SCHEMA
-                + ".menu_items WHERE restaurant_id = ?"
-                + (availableOnly ? " AND status = 'AVAILABLE'" : "")
-                + " ORDER BY item_id";
+        String query = "SELECT item_id, restaurant_id, name, price, status "
+                     + "FROM \"SWproject\".menu_items WHERE restaurant_id = ? AND status = 'AVAILABLE' ORDER BY item_id";
 
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement s = c.prepareStatement(sql)) {
-            s.setInt(1, restaurantId);
-            try (ResultSet rs = s.executeQuery()) {
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, restaurantId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     items.add(new MenuItem(
-                            rs.getInt("item_id"),
-                            rs.getInt("restaurant_id"),
-                            rs.getString("name"),
-                            rs.getBigDecimal("price"),
-                            rs.getString("status")));
+                        rs.getInt("item_id"),
+                        rs.getInt("restaurant_id"),
+                        rs.getString("name"),
+                        rs.getDouble("price"),
+                        rs.getString("status")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error fetching available menu items: " + e.getMessage());
+        }
+
+        return items;
+    }
+
+    // Get ALL menu items for a restaurant (For Manager)
+    public List<MenuItem> findByRestaurantId(int restaurantId) {
+        List<MenuItem> items = new ArrayList<>();
+        String query = "SELECT item_id, restaurant_id, name, price, status "
+                     + "FROM \"SWproject\".menu_items WHERE restaurant_id = ? ORDER BY item_id";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, restaurantId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    items.add(new MenuItem(
+                        rs.getInt("item_id"),
+                        rs.getInt("restaurant_id"),
+                        rs.getString("name"),
+                        rs.getDouble("price"),
+                        rs.getString("status")
+                    ));
                 }
             }
         } catch (SQLException e) {
             System.err.println("Database error fetching menu items: " + e.getMessage());
         }
+
         return items;
     }
 
     public boolean updateStatus(int itemId, String newStatus) {
-        String sql = "UPDATE " + SCHEMA + ".menu_items SET status = ? WHERE item_id = ?";
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement s = c.prepareStatement(sql)) {
-            s.setString(1, newStatus);
-            s.setInt(2, itemId);
-            return s.executeUpdate() > 0;
+        String query = "UPDATE \"SWproject\".menu_items SET status = ? WHERE item_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, itemId);
+
+            return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.err.println("Database error updating menu item: " + e.getMessage());
-            return false;
+            System.err.println("Database error updating menu item status: " + e.getMessage());
         }
+
+        return false;
     }
 }
