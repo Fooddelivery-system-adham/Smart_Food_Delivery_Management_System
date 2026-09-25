@@ -8,8 +8,20 @@ import java.util.Properties;
 public class Main {
 
 	public static void main(String[] args) {
+
 	  System.out.println("hisdsi");
-      
+	  System.out.println("hisdsi");
+	  System.out.println("hisdsi");
+	  System.out.println("hisdsi");
+	  System.out.println("hisdsi");
+	  System.out.println("hisdsi");
+
+	  System.out.println("hisdsi");
+	  System.out.println("adham");
+	  System.out.println("adham");
+
+	    
+
     }
 	}
 
