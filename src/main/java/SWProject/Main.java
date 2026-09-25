@@ -6,15 +6,12 @@ import java.util.Scanner;
 public class Main {
 
     public static void main(String[] args) {
-        // Auth
         UserRepository userRepository = new UserRepository();
         AuthService authService = new AuthService(userRepository);
 
-        // Restaurants
         RestaurantRepository restaurantRepository = new RestaurantRepository();
         RestaurantService restaurantService = new RestaurantService(restaurantRepository);
 
-        // Menu Items
         MenuItemRepository menuItemRepository = new MenuItemRepository();
         MenuItemService menuItemService = new MenuItemService(menuItemRepository);
 
@@ -65,9 +62,10 @@ public class Main {
     }
 
     private static void handleCustomerMenu(Scanner scanner, User user) {
-    	
+        // empty for now
     }
 
+    // ==== UPDATED MANAGER MENU ====
     private static void handleManagerMenu(Scanner scanner, User user,
                                           RestaurantService restaurantService,
                                           MenuItemService menuItemService) {
@@ -75,7 +73,7 @@ public class Main {
 
         while (inManagerMenu && user.isManager()) {
             System.out.println("\n=== Manager Menu ===");
-            System.out.println("1. View All Restaurants + Their Menus");
+            System.out.println("1. View Restaurants & Menus");
             System.out.println("2. Change Restaurant Status (OPEN / CLOSED)");
             System.out.println("3. Change Menu Item Status (AVAILABLE / UNAVAILABLE)");
             System.out.println("4. Log out");
@@ -83,32 +81,52 @@ public class Main {
 
             String choice = scanner.nextLine().trim();
 
-            // ===== Option 1: Show everything =====
+            // ===== Option 1: Clean List & Specific Menu =====
             if (choice.equals("1")) {
                 List<Restaurant> restaurants = restaurantService.getAllRestaurants();
 
                 if (restaurants.isEmpty()) {
                     System.out.println("No restaurants found.");
                 } else {
+                    System.out.println("\n--- All Restaurants ---");
                     for (Restaurant r : restaurants) {
-                        System.out.println("\n----------------------------------------");
-                        System.out.println("Restaurant ID: " + r.getRestaurantId()
-                                + " | Name: " + r.getName()
-                                + " | Status: " + r.getStatus());
+                        System.out.println("[" + r.getRestaurantId() + "] " 
+                                + r.getName() + " (Status: " + r.getStatus() + ")");
+                    }
 
-                        List<MenuItem> items = menuItemService.getMenuItemsByRestaurant(r.getRestaurantId());
-                        if (items.isEmpty()) {
-                            System.out.println("  (No menu items)");
+                    System.out.print("\nEnter a Restaurant ID to view its menu (or 0 to go back): ");
+                    String idText = scanner.nextLine().trim();
+
+                    if (idText.equals("0")) {
+                        continue; // skips the rest and loops back to Manager Menu
+                    }
+
+                    try {
+                        int selectedRestId = Integer.parseInt(idText);
+                        
+                        // Check if the ID actually exists in the list we just fetched
+                        boolean exists = restaurants.stream().anyMatch(r -> r.getRestaurantId() == selectedRestId);
+                        
+                        if (!exists) {
+                            System.out.println("Restaurant not found. Returning to menu...");
                         } else {
-                            for (MenuItem item : items) {
-                                System.out.println("  - Item ID: " + item.getItemId()
-                                        + " | " + item.getName()
-                                        + " | Price: " + item.getPrice()
-                                        + " | Status: " + item.getStatus());
+                            // Fetch and show only the menu for the selected restaurant
+                            List<MenuItem> items = menuItemService.getMenuItemsByRestaurant(selectedRestId);
+                            System.out.println("\n--- Menu Items ---");
+                            if (items.isEmpty()) {
+                                System.out.println("No menu items available for this restaurant.");
+                            } else {
+                                for (MenuItem item : items) {
+                                    System.out.println("  ID: " + item.getItemId()
+                                            + " | " + item.getName()
+                                            + " | Price: $" + item.getPrice()
+                                            + " | Status: " + item.getStatus());
+                                }
                             }
                         }
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid input. Must be a number. Returning to menu...");
                     }
-                    System.out.println("----------------------------------------");
                 }
 
             // ===== Option 2: Change restaurant status =====
