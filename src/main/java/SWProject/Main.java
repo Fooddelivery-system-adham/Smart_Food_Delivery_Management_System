@@ -1,10 +1,23 @@
 package SWProject;
+
+import java.util.List;
 import java.util.Scanner;
+
 public class Main {
 
     public static void main(String[] args) {
+        // Auth
         UserRepository userRepository = new UserRepository();
         AuthService authService = new AuthService(userRepository);
+
+        // Restaurants
+        RestaurantRepository restaurantRepository = new RestaurantRepository();
+        RestaurantService restaurantService = new RestaurantService(restaurantRepository);
+
+        // Menu Items
+        MenuItemRepository menuItemRepository = new MenuItemRepository();
+        MenuItemService menuItemService = new MenuItemService(menuItemRepository);
+
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -16,7 +29,7 @@ public class Main {
             String choice = scanner.nextLine().trim();
 
             if (choice.equals("1")) {
-                handleLogin(scanner, authService);
+                handleLogin(scanner, authService, restaurantService, menuItemService);
             } else if (choice.equals("2")) {
                 System.out.println("Goodbye!");
                 break;
@@ -28,7 +41,9 @@ public class Main {
         scanner.close();
     }
 
-    private static void handleLogin(Scanner scanner, AuthService authService) {
+    private static void handleLogin(Scanner scanner, AuthService authService,
+                                    RestaurantService restaurantService,
+                                    MenuItemService menuItemService) {
         System.out.print("Enter Username or Email: ");
         String identifier = scanner.nextLine();
 
@@ -44,14 +59,109 @@ public class Main {
             if (user.isCustomer()) {
                 handleCustomerMenu(scanner, user);
             } else if (user.isManager()) {
-                handleManagerMenu(scanner, user);
+                handleManagerMenu(scanner, user, restaurantService, menuItemService);
             }
         }
     }
 
     private static void handleCustomerMenu(Scanner scanner, User user) {
+    	
     }
 
-    private static void handleManagerMenu(Scanner scanner, User user) {
+    private static void handleManagerMenu(Scanner scanner, User user,
+                                          RestaurantService restaurantService,
+                                          MenuItemService menuItemService) {
+        boolean inManagerMenu = true;
+
+        while (inManagerMenu && user.isManager()) {
+            System.out.println("\n=== Manager Menu ===");
+            System.out.println("1. View All Restaurants + Their Menus");
+            System.out.println("2. Change Restaurant Status (OPEN / CLOSED)");
+            System.out.println("3. Change Menu Item Status (AVAILABLE / UNAVAILABLE)");
+            System.out.println("4. Log out");
+            System.out.print("Choice: ");
+
+            String choice = scanner.nextLine().trim();
+
+            // ===== Option 1: Show everything =====
+            if (choice.equals("1")) {
+                List<Restaurant> restaurants = restaurantService.getAllRestaurants();
+
+                if (restaurants.isEmpty()) {
+                    System.out.println("No restaurants found.");
+                } else {
+                    for (Restaurant r : restaurants) {
+                        System.out.println("\n----------------------------------------");
+                        System.out.println("Restaurant ID: " + r.getRestaurantId()
+                                + " | Name: " + r.getName()
+                                + " | Status: " + r.getStatus());
+
+                        List<MenuItem> items = menuItemService.getMenuItemsByRestaurant(r.getRestaurantId());
+                        if (items.isEmpty()) {
+                            System.out.println("  (No menu items)");
+                        } else {
+                            for (MenuItem item : items) {
+                                System.out.println("  - Item ID: " + item.getItemId()
+                                        + " | " + item.getName()
+                                        + " | Price: " + item.getPrice()
+                                        + " | Status: " + item.getStatus());
+                            }
+                        }
+                    }
+                    System.out.println("----------------------------------------");
+                }
+
+            // ===== Option 2: Change restaurant status =====
+            } else if (choice.equals("2")) {
+                System.out.print("Enter Restaurant ID: ");
+                String idText = scanner.nextLine().trim();
+                int restaurantId;
+                try {
+                    restaurantId = Integer.parseInt(idText);
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid ID. Must be a number.");
+                    continue;
+                }
+
+                System.out.print("Enter new status (OPEN / CLOSED): ");
+                String newStatus = scanner.nextLine().trim();
+
+                boolean ok = restaurantService.updateRestaurantStatus(restaurantId, newStatus);
+                if (ok) {
+                    System.out.println("Restaurant status updated successfully.");
+                } else {
+                    System.out.println("Update failed. Check the Restaurant ID.");
+                }
+
+            // ===== Option 3: Change menu item status =====
+            } else if (choice.equals("3")) {
+                System.out.print("Enter Menu Item ID: ");
+                String idText = scanner.nextLine().trim();
+                int itemId;
+                try {
+                    itemId = Integer.parseInt(idText);
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid ID. Must be a number.");
+                    continue;
+                }
+
+                System.out.print("Enter new status (AVAILABLE / UNAVAILABLE): ");
+                String newStatus = scanner.nextLine().trim();
+
+                boolean ok = menuItemService.updateMenuItemStatus(itemId, newStatus);
+                if (ok) {
+                    System.out.println("Menu item status updated successfully.");
+                } else {
+                    System.out.println("Update failed. Check the Item ID.");
+                }
+
+            // ===== Option 4: Exit =====
+            } else if (choice.equals("4")) {
+                System.out.println("Logging out from Manager Menu...");
+                inManagerMenu = false;
+            } else {
+                System.out.println("Invalid choice! Please enter 1, 2, 3 or 4.");
+            }
+        }
     }
 }
