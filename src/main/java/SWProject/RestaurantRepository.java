@@ -1,93 +1,57 @@
-
 package SWProject;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class RestaurantRepository {
+    private static final String SCHEMA = "\"SWproject\"";
 
-    public List<Restaurant> getOpenRestaurants()
-            throws SQLException {
-
+    public List<Restaurant> getOpenRestaurants() {
         List<Restaurant> restaurants = new ArrayList<>();
-
-        String sql =
-                "SELECT restaurant_id, name, status " +
-                "FROM restaurants " +
-                "WHERE status = ? " +
-                "ORDER BY restaurant_id";
-
-        try (Connection connection =
-                     DatabaseConnection.getConnection();
-
-             PreparedStatement statement =
-                     connection.prepareStatement(sql)) {
-
-            statement.setString(1, "OPEN");
-
-            try (ResultSet resultSet =
-                         statement.executeQuery()) {
-
-                while (resultSet.next()) {
-
-                    int id =
-                            resultSet.getInt("restaurant_id");
-
-                    String name =
-                            resultSet.getString("name");
-
-                    String status =
-                            resultSet.getString("status");
-
-                    Restaurant restaurant =
-                            new Restaurant(id, name, status);
-
-                    restaurants.add(restaurant);
-                }
+        String sql = "SELECT restaurant_id, name, status FROM " + SCHEMA
+                + ".restaurants WHERE status = 'OPEN' ORDER BY restaurant_id";
+        try (Connection c = DatabaseConnection.getConnection();
+             PreparedStatement s = c.prepareStatement(sql);
+             ResultSet rs = s.executeQuery()) {
+            while (rs.next()) {
+                restaurants.add(map(rs));
             }
+        } catch (SQLException e) {
+            System.err.println("Database error fetching open restaurants: " + e.getMessage());
         }
-
         return restaurants;
     }
-    public List<MenuItem> getAvailableMenu(int restaurantId)
-            throws SQLException {
 
-        List<MenuItem> items = new ArrayList<>();
-
-        String sql =
-                "SELECT item_id, name, price " +
-                "FROM menu_items " +
-                "WHERE restaurant_id = ? " +
-                "AND status = 'AVAILABLE' " +
-                "ORDER BY item_id";
-
-        try (Connection connection =
-                     DatabaseConnection.getConnection();
-
-             PreparedStatement statement =
-                     connection.prepareStatement(sql)) {
-
-            statement.setInt(1, restaurantId);
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-
-                while (resultSet.next()) {
-
-                    MenuItem item = new MenuItem(
-                            resultSet.getInt("item_id"),
-                            resultSet.getString("name"),
-                            resultSet.getBigDecimal("price")
-                    );
-
-                    items.add(item);
-                }
-            }
+    public List<Restaurant> findAll() {
+        List<Restaurant> restaurants = new ArrayList<>();
+        String sql = "SELECT restaurant_id, name, status FROM " + SCHEMA
+                + ".restaurants ORDER BY restaurant_id";
+        try (Connection c = DatabaseConnection.getConnection();
+             PreparedStatement s = c.prepareStatement(sql);
+             ResultSet rs = s.executeQuery()) {
+            while (rs.next()) restaurants.add(map(rs));
+        } catch (SQLException e) {
+            System.err.println("Database error fetching restaurants: " + e.getMessage());
         }
+        return restaurants;
+    }
 
-        return items;
+    public boolean updateStatus(int restaurantId, String newStatus) {
+        String sql = "UPDATE " + SCHEMA + ".restaurants SET status = ? WHERE restaurant_id = ?";
+        try (Connection c = DatabaseConnection.getConnection();
+             PreparedStatement s = c.prepareStatement(sql)) {
+            s.setString(1, newStatus);
+            s.setInt(2, restaurantId);
+            return s.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("Database error updating restaurant status: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private Restaurant map(ResultSet rs) throws SQLException {
+        return new Restaurant(rs.getInt("restaurant_id"),
+                rs.getString("name"), rs.getString("status"));
     }
 }
