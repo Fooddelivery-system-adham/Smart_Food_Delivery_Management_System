@@ -1,5 +1,6 @@
 package SWProject;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
@@ -8,8 +9,15 @@ public class Main {
     public static void main(String[] args) {
         UserRepository userRepository = new UserRepository();
         AuthService authService = new AuthService(userRepository);
-        RestaurantService restaurantService = new RestaurantService(new RestaurantRepository());
-        MenuItemService menuItemService = new MenuItemService(new MenuItemRepository());
+
+        RestaurantRepository restaurantRepository = new RestaurantRepository();
+        RestaurantService restaurantService = new RestaurantService(restaurantRepository);
+
+        MenuItemRepository menuItemRepository = new MenuItemRepository();
+        MenuItemService menuItemService = new MenuItemService(menuItemRepository);
+
+        OrderRepository orderRepository = new OrderRepository();
+        OrderService orderService = new OrderService(orderRepository, menuItemRepository);
 
         try (Scanner scanner = new Scanner(System.in)) {
             while (true) {
@@ -25,7 +33,7 @@ public class Main {
                 }
 
                 if ("1".equals(choice)) {
-                    login(scanner, authService, restaurantService, menuItemService);
+                    login(scanner, authService, restaurantService, menuItemService, orderService);
                 } else {
                     System.out.println("Invalid choice. Please enter 1 or 0.");
                 }
@@ -35,7 +43,8 @@ public class Main {
     }
 
     private static void login(Scanner scanner, AuthService auth,
-                              RestaurantService restaurants, MenuItemService menu) {
+                              RestaurantService restaurants, MenuItemService menu,
+                              OrderService orderService) {
         System.out.print("Username or Email: ");
         String id = scanner.nextLine();
         System.out.print("Password: ");
@@ -49,7 +58,7 @@ public class Main {
         System.out.println("\nLogin Successful! Welcome " + user.getUsername());
 
         if (user.isCustomer()) {
-            customerMenu(scanner, restaurants, menu);
+            customerMenu(scanner, user, restaurants, menu, orderService);
         } else if (user.isManager()) {
             managerMenu(scanner, restaurants, menu);
         } else {
@@ -57,9 +66,9 @@ public class Main {
         }
     }
 
-    // ================= CUSTOMER MENU (Sprint 1 - US1.2 & US1.3) =================
-    private static void customerMenu(Scanner scanner, RestaurantService restaurants,
-                                     MenuItemService menu) {
+    // ================= CUSTOMER MENU (Sprint 1 & Sprint 2) =================
+    private static void customerMenu(Scanner scanner, User user, RestaurantService restaurants,
+                                     MenuItemService menu, OrderService orderService) {
         while (true) {
             List<Restaurant> list = restaurants.getOpenRestaurants();
             System.out.println("\n=== AVAILABLE RESTAURANTS ===");
@@ -86,34 +95,101 @@ public class Main {
             }
 
             Restaurant selectedRestaurant = list.get(choice - 1);
-            showCustomerMenuItems(scanner, selectedRestaurant, menu);
+            handleCustomerOrdering(scanner, user, selectedRestaurant, menu, orderService);
         }
     }
+    private static void handleCustomerOrdering(Scanner scanner, User user, Restaurant r,
+            MenuItemService menu, OrderService orderService) {
+    List<OrderService.CartItem> cart = new ArrayList<>();
 
-    private static void showCustomerMenuItems(Scanner scanner, Restaurant r, MenuItemService menu) {
-        while (true) {
-            List<MenuItem> items = menu.getAvailableMenuItems(r.getRestaurantId());
-            System.out.println("\n=== " + r.getName() + " MENU ===");
+      while (true) {
+List<MenuItem> items = menu.getAvailableMenuItems(r.getRestaurantId());
+System.out.println("\n=== " + r.getName() + " MENU ===");
 
-            if (items.isEmpty()) {
-                System.out.println("No available menu items.");
-            } else {
-                for (int i = 0; i < items.size(); i++) {
-                    System.out.println((i + 1) + ". " + items.get(i).getName()
-                            + " - $" + items.get(i).getPrice());
-                }
-            }
+if (items.isEmpty()) {
+System.out.println("No available menu items.");
+return;
+} else {
+for (MenuItem item : items) {
+System.out.println("[" + item.getItemId() + "] " + item.getName()
++ " - $" + item.getPrice());
+}
+}
 
-            System.out.println("0. Back");
-            System.out.print("Choice: ");
+// Display current cart items if cart is not empty
+if (!cart.isEmpty()) {
+System.out.println("\nYour Current Cart (" + cart.size() + " item/s):");
+for (OrderService.CartItem c : cart) {
+System.out.println("   - Item ID: " + c.getItemId() + " | Qty: " + c.getQuantity());
+}
+}
 
-            if (readInt(scanner) == 0) {
-                return;
-            }
+System.out.println("\nOptions:");
+System.out.println("1. Add item to cart");
+System.out.println("2. Checkout & Place Order");
+System.out.println("3. Clear Cart");
+System.out.println("0. Cancel & Back");
+System.out.print("Choice: ");
 
-            System.out.println("Ordering is not part of Sprint 1. Enter 0 to go back.");
-        }
-    }
+int choice = readInt(scanner);
+if (choice == 0) {
+return;
+}
+
+if (choice == 1) {
+System.out.print("Enter Item ID: ");
+int itemId = readInt(scanner);
+
+// Verify that the item ID exists in this specific restaurant
+boolean exists = items.stream().anyMatch(i -> i.getItemId() == itemId);
+if (!exists) {
+System.out.println("Invalid Item ID! Please select an ID from the menu above.");
+continue;
+}
+
+System.out.print("Enter Quantity: ");
+int qty = readInt(scanner);
+
+if (qty <= 0) {
+System.out.println("Invalid quantity! Quantity must be 1 or more.");
+continue;
+}
+
+cart.add(new OrderService.CartItem(itemId, qty));
+System.out.println("Item added to cart!");
+
+} else if (choice == 2) {
+if (cart.isEmpty()) {
+System.out.println("Cart is empty! Add items first.");
+continue;
+}
+
+System.out.print("Enter Delivery Address: ");
+String address = scanner.nextLine().trim();
+
+Order order = orderService.placeOrder(user.getUserId(), r.getRestaurantId(), address, cart);
+if (order != null) {
+System.out.println("\nOrder Placed Successfully!");
+System.out.println("Order ID: " + order.getOrderId());
+System.out.println("Status:   " + order.getStatus());
+System.out.println("Address:  " + order.getDeliveryAddress());
+System.out.println("Total:    $" + order.getTotal());
+return; // Order completed, return to restaurants list
+} else {
+System.out.println("Checkout failed. Clearing invalid cart...");
+cart.clear(); // Clear cart on failure to avoid invalid leftover items
+}
+
+} else if (choice == 3) {
+cart.clear();
+System.out.println("Cart cleared successfully!");
+} else {
+System.out.println("Invalid option.");
+}
+}
+}
+
+    
 
     // ================= MANAGER MENU =================
     private static void managerMenu(Scanner scanner, RestaurantService restaurants,
@@ -153,7 +229,7 @@ public class Main {
             System.out.println("[" + r.getRestaurantId() + "] " + r.getName()
                     + " (" + r.getStatus() + ")");
         }
-
+            
         System.out.print("Restaurant ID to view menu (0 = back): ");
         int id = readInt(scanner);
         if (id == 0) {
