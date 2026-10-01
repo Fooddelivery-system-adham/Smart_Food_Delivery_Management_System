@@ -9,13 +9,26 @@ public class OrderService {
     private final MenuItemRepository menuItemRepository;
     private final RestaurantRepository restaurantRepository;
 
+    // US2.4: Result Enum for clean status messages
+    public enum CancellationResult {
+        CANCELLED,
+        ALREADY_CANCELLED,
+        NOT_ALLOWED,
+        NOT_FOUND,
+        INVALID_ORDER_ID,
+        DATABASE_ERROR
+    }
+
     public OrderService(OrderRepository orderRepository, MenuItemRepository menuItemRepository,
                         RestaurantRepository restaurantRepository) {
         this.orderRepository = orderRepository;
         this.menuItemRepository = menuItemRepository;
         this.restaurantRepository = restaurantRepository;
     }
-
+    public boolean hasPendingOrder(int customerId) {
+        return orderRepository.hasPendingOrder(customerId);
+    }
+    // US2.1, US2.2, US2.3: Place a new order
     public Order placeOrder(int customerId, int restaurantId, String deliveryAddress,
                             double deliveryDistanceKm, List<CartItem> cart) {
 
@@ -25,13 +38,13 @@ public class OrderService {
             return null;
         }
 
-        // US2.3: Validate delivery address format (Reject invalid address)
+        // US2.3: Validate delivery address format
         if (deliveryAddress == null || deliveryAddress.trim().length() < 5) {
             System.out.println("Order Rejected: Invalid delivery address (must be at least 5 characters).");
             return null;
         }
 
-        // Fetch restaurant details for policy enforcement
+        // Fetch restaurant details
         Restaurant restaurant = restaurantRepository.findById(restaurantId);
         if (restaurant == null || !restaurant.isOpen()) {
             System.out.println("Order Rejected: Restaurant is closed or does not exist.");
@@ -45,7 +58,6 @@ public class OrderService {
             return null;
         }
 
-        // Fetch available items for this restaurant from DB
         List<MenuItem> availableItems = menuItemRepository.findAvailableByRestaurantId(restaurantId);
         List<OrderItem> orderItems = new ArrayList<>();
         double calculatedTotal = 0.0;
@@ -76,20 +88,19 @@ public class OrderService {
             orderItems.add(new OrderItem(dbItem.getItemId(), dbItem.getName(), cartItem.getQuantity(), dbItem.getPrice()));
         }
 
-        // US2.3: Reject if order total is below minimum order value
+        // US2.3: Reject if total is below minimum order value
         if (calculatedTotal < restaurant.getMinOrderValue()) {
             System.out.println("Order Rejected: Total ($" + calculatedTotal
                     + ") is below minimum order value ($" + restaurant.getMinOrderValue() + ").");
             return null;
         }
 
-        // US2.1: Order status changes to Pending
+        // US2.1: Order status changes to PENDING
         Order newOrder = new Order(
                 0, customerId, restaurantId, "STANDARD",
                 "PENDING", deliveryAddress.trim(), calculatedTotal, orderItems
         );
 
-        // Save order to PostgreSQL
         boolean success = orderRepository.saveOrder(newOrder);
         if (success) {
             return newOrder;
@@ -98,6 +109,37 @@ public class OrderService {
             return null;
         }
     }
+
+    // US2.4: Cancel an existing order
+    public CancellationResult cancelOrder(int customerId, int orderId) {
+        if (orderId <= 0) {
+            return CancellationResult.INVALID_ORDER_ID;
+        }
+
+        String currentStatus = orderRepository.findOrderStatus(orderId, customerId);
+
+        if (currentStatus == null) {
+            return CancellationResult.NOT_FOUND;
+        }
+
+        if ("CANCELLED".equalsIgnoreCase(currentStatus)) {
+            return CancellationResult.ALREADY_CANCELLED;
+        }
+
+        // US2.4 Acceptance Criteria: Only PENDING orders can be cancelled.
+        // Orders that have entered preparation (PREPARING, CONFIRMED, READY, etc.) CANNOT be cancelled.
+        if (!"PENDING".equalsIgnoreCase(currentStatus)) {
+            return CancellationResult.NOT_ALLOWED;
+        }
+
+        boolean updated = orderRepository.updateOrderStatus(orderId, customerId, "CANCELLED");
+        if (updated) {
+            return CancellationResult.CANCELLED;
+        }
+
+        return CancellationResult.DATABASE_ERROR;
+    }
+
 
     public static class CartItem {
         private final int itemId;
