@@ -3,7 +3,24 @@ package SWProject;
 import java.sql.*;
 
 public class OrderRepository {
+    public boolean hasPendingOrder(int customerId) {
+        String query = "SELECT COUNT(*) as count FROM \"SWproject\".orders WHERE customer_id = ? AND status = 'PENDING'";
 
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, customerId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("count") > 0;
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error checking pending orders: " + e.getMessage());
+        }
+
+        return false;
+    }
     // Saves order + order items inside a single SQL Transaction
     public boolean saveOrder(Order order) {
         String insertOrderSql = "INSERT INTO \"SWproject\".orders "
@@ -14,7 +31,7 @@ public class OrderRepository {
                 + "(order_id, item_id, quantity, unit_price) VALUES (?, ?, ?, ?)";
 
         try (Connection conn = DatabaseConnection.getConnection()) {
-            conn.setAutoCommit(false); 
+            conn.setAutoCommit(false); // Start Transaction
 
             int generatedOrderId = -1;
 
@@ -52,7 +69,7 @@ public class OrderRepository {
                 itemStmt.executeBatch();
             }
 
-            conn.commit(); 
+            conn.commit(); // Commit Transaction
             return true;
 
         } catch (SQLException e) {
@@ -61,4 +78,46 @@ public class OrderRepository {
 
         return false;
     }
+
+    // US2.4: Find the current status of an order for a specific customer
+    public String findOrderStatus(int orderId, int customerId) {
+        String query = "SELECT status FROM \"SWproject\".orders WHERE order_id = ? AND customer_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, orderId);
+            stmt.setInt(2, customerId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("status");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error finding order status: " + e.getMessage());
+        }
+
+        return null; // Return null if order does not exist or belongs to another user
+    }
+
+    // US2.4: Update order status in PostgreSQL
+    public boolean updateOrderStatus(int orderId, int customerId, String newStatus) {
+        String query = "UPDATE \"SWproject\".orders SET status = ? WHERE order_id = ? AND customer_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, orderId);
+            stmt.setInt(3, customerId);
+
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("Database error updating order status: " + e.getMessage());
+        }
+
+        return false;
+    }
+
 }
