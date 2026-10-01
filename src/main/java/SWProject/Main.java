@@ -20,6 +20,11 @@ public class Main {
         // US2.3: OrderService now also needs RestaurantRepository for delivery policies
         OrderService orderService = new OrderService(orderRepository, menuItemRepository, restaurantRepository);
 
+        // US2.4 is kept separate so the existing OrderRepository/OrderService stay unchanged.
+        OrderCancellationRepository orderCancellationRepository = new OrderCancellationRepository();
+        OrderCancellationService orderCancellationService =
+                new OrderCancellationService(orderCancellationRepository);
+
         try (Scanner scanner = new Scanner(System.in)) {
             while (true) {
                 System.out.println("\n=== Food Delivery System ===");
@@ -34,7 +39,7 @@ public class Main {
                 }
 
                 if ("1".equals(choice)) {
-                    login(scanner, authService, restaurantService, menuItemService, orderService);
+                    login(scanner, authService, restaurantService, menuItemService, orderService, orderCancellationService);
                 } else {
                     System.out.println("Invalid choice. Please enter 1 or 0.");
                 }
@@ -45,7 +50,8 @@ public class Main {
 
     private static void login(Scanner scanner, AuthService auth,
                               RestaurantService restaurants, MenuItemService menu,
-                              OrderService orderService) {
+                              OrderService orderService,
+                              OrderCancellationService orderCancellationService) {
         System.out.print("Username or Email: ");
         String id = scanner.nextLine();
         System.out.print("Password: ");
@@ -59,7 +65,7 @@ public class Main {
         System.out.println("\nLogin Successful! Welcome " + user.getUsername());
 
         if (user.isCustomer()) {
-            customerMenu(scanner, user, restaurants, menu, orderService);
+            customerMenu(scanner, user, restaurants, menu, orderService, orderCancellationService);
         } else if (user.isManager()) {
             managerMenu(scanner, restaurants, menu);
         } else {
@@ -69,7 +75,8 @@ public class Main {
 
     // ================= CUSTOMER MENU (Sprint 1 & Sprint 2) =================
     private static void customerMenu(Scanner scanner, User user, RestaurantService restaurants,
-                                     MenuItemService menu, OrderService orderService) {
+                                     MenuItemService menu, OrderService orderService,
+                                     OrderCancellationService orderCancellationService) {
         while (true) {
             List<Restaurant> list = restaurants.getOpenRestaurants();
             System.out.println("\n=== AVAILABLE RESTAURANTS ===");
@@ -85,12 +92,18 @@ public class Main {
                 }
             }
 
+            System.out.println("99. Cancel an existing order");
             System.out.println("0. Log out");
-            System.out.print("Choose a restaurant: ");
+            System.out.print("Choose a restaurant or option: ");
 
             int choice = readInt(scanner);
             if (choice == 0) {
                 return;
+            }
+
+            if (choice == 99) {
+                handleCancelOrder(scanner, user, orderCancellationService);
+                continue;
             }
 
             if (choice < 1 || choice > list.size()) {
@@ -210,6 +223,36 @@ public class Main {
             } else {
                 System.out.println("Invalid option.");
             }
+        }
+    }
+
+    // ================= US2.4 - CANCEL ORDER =================
+    private static void handleCancelOrder(Scanner scanner, User user,
+                                          OrderCancellationService cancellationService) {
+        System.out.print("Enter Order ID to cancel: ");
+        int orderId = readInt(scanner);
+
+        OrderCancellationService.CancellationResult result =
+                cancellationService.cancelOrder(user.getUserId(), orderId);
+
+        switch (result) {
+            case CANCELLED:
+                System.out.println("Order cancelled successfully. Status is now CANCELLED.");
+                break;
+            case ALREADY_CANCELLED:
+                System.out.println("This order is already CANCELLED.");
+                break;
+            case NOT_ALLOWED:
+                System.out.println("Cancellation rejected: only PENDING orders can be cancelled.");
+                break;
+            case NOT_FOUND:
+                System.out.println("Order not found, or it does not belong to this customer.");
+                break;
+            case INVALID_ORDER_ID:
+                System.out.println("Invalid Order ID.");
+                break;
+            default:
+                System.out.println("Cancellation failed because of a database/update error.");
         }
     }
 
