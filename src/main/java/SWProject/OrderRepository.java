@@ -21,6 +21,22 @@ public class OrderRepository {
 
         return false;
     }
+    public boolean assignDriverToOrder(int orderId, int driverId) {
+        String query = "UPDATE \"SWproject\".orders SET driver_id = ?, status = 'CONFIRMED' WHERE order_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, driverId);
+            stmt.setInt(2, orderId);
+
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("Database error assigning driver to order: " + e.getMessage());
+        }
+
+        return false;
+    }
     // Saves order + order items inside a single SQL Transaction
     public boolean saveOrder(Order order) {
         String insertOrderSql = "INSERT INTO \"SWproject\".orders "
