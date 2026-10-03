@@ -19,6 +19,19 @@ public class Main {
         OrderRepository orderRepository = new OrderRepository();
         OrderService orderService = new OrderService(orderRepository, menuItemRepository, restaurantRepository);
 
+        // Sprint 3: Delivery and Notification setup
+        DriverRepository driverRepository = new DriverRepository();
+        NotificationService notificationService = new NotificationService();
+        notificationService.addObserver(new CustomerConsoleNotifier());
+
+        DeliveryService deliveryService = new DeliveryService(
+                driverRepository,
+                orderRepository,
+                restaurantRepository,
+                notificationService,
+                new NearestDriverStrategy()
+        );
+
         try (Scanner scanner = new Scanner(System.in)) {
             while (true) {
                 System.out.println("\n=== Food Delivery System ===");
@@ -33,7 +46,8 @@ public class Main {
                 }
 
                 if ("1".equals(choice)) {
-                    login(scanner, authService, restaurantService, menuItemService, orderService);
+                    login(scanner, authService, restaurantService, menuItemService,
+                          orderService, deliveryService, notificationService);
                 } else {
                     System.out.println("Invalid choice. Please enter 1 or 0.");
                 }
@@ -44,7 +58,8 @@ public class Main {
 
     private static void login(Scanner scanner, AuthService auth,
                               RestaurantService restaurants, MenuItemService menu,
-                              OrderService orderService) {
+                              OrderService orderService, DeliveryService deliveryService,
+                              NotificationService notificationService) {
         System.out.print("Username or Email: ");
         String id = scanner.nextLine();
         System.out.print("Password: ");
@@ -58,54 +73,53 @@ public class Main {
         System.out.println("\nLogin Successful! Welcome " + user.getUsername());
 
         if (user.isCustomer()) {
-            customerMenu(scanner, user, restaurants, menu, orderService);
+            customerMenu(scanner, user, restaurants, menu, orderService, notificationService);
         } else if (user.isManager()) {
-            managerMenu(scanner, restaurants, menu);
+            managerMenu(scanner, restaurants, menu, deliveryService);
         } else {
             System.out.println("Unsupported role: " + user.getRole());
         }
     }
 
-    // ================= CUSTOMER MENU (Sprint 1 & Sprint 2) =================
+    // ================= CUSTOMER MENU (Sprint 1, 2, 3) =================
     private static void customerMenu(Scanner scanner, User user, RestaurantService restaurants,
-            MenuItemService menu, OrderService orderService) {
-while (true) {
-System.out.println("\n=== CUSTOMER MENU ===");
-System.out.println("1. View Available Restaurants");
+                                     MenuItemService menu, OrderService orderService,
+                                     NotificationService notificationService) {
+        while (true) {
+            System.out.println("\n=== CUSTOMER MENU ===");
+            System.out.println("1. View Available Restaurants");
 
-// US2.4: Show cancel option ONLY if user actually has a PENDING order
-boolean hasPending = orderService.hasPendingOrder(user.getUserId());
-if (hasPending) {
-System.out.println("2. Cancel an Existing Order");
-}
+            boolean hasPending = orderService.hasPendingOrder(user.getUserId());
+            if (hasPending) {
+                System.out.println("2. Cancel an Existing Order");
+            }
 
-System.out.println("0. Log out");
-System.out.print("Choice: ");
+            System.out.println("0. Log out");
+            System.out.print("Choice: ");
 
-int choice = readInt(scanner);
+            int choice = readInt(scanner);
+            if (choice == 0) {
+                System.out.println("Logging out...");
+                return;
+            }
 
-if (choice == 0) {
-System.out.println("Logging out...");
-return;
-}
-
-if (choice == 1) {
-showAvailableRestaurants(scanner, user, restaurants, menu, orderService);
-} else if (choice == 2) {
-// Safety check: if user somehow selects 2 without having pending order
-if (!hasPending) {
-System.out.println("No pending orders available to cancel.");
-continue;
-}
-handleCancelOrder(scanner, user, orderService);
-} else {
-System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
-}
-}
-}
+            if (choice == 1) {
+                showAvailableRestaurants(scanner, user, restaurants, menu, orderService, notificationService);
+            } else if (choice == 2) {
+                if (!hasPending) {
+                    System.out.println("No pending orders available to cancel.");
+                    continue;
+                }
+                handleCancelOrder(scanner, user, orderService, notificationService);
+            } else {
+                System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
+            }
+        }
+    }
 
     private static void showAvailableRestaurants(Scanner scanner, User user, RestaurantService restaurants,
-                                                  MenuItemService menu, OrderService orderService) {
+                                                  MenuItemService menu, OrderService orderService,
+                                                  NotificationService notificationService) {
         while (true) {
             List<Restaurant> list = restaurants.getOpenRestaurants();
             System.out.println("\n=== AVAILABLE RESTAURANTS ===");
@@ -136,12 +150,13 @@ System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
             }
 
             Restaurant selectedRestaurant = list.get(choice - 1);
-            handleCustomerOrdering(scanner, user, selectedRestaurant, menu, orderService);
+            handleCustomerOrdering(scanner, user, selectedRestaurant, menu, orderService, notificationService);
         }
     }
 
     private static void handleCustomerOrdering(Scanner scanner, User user, Restaurant r,
-                                               MenuItemService menu, OrderService orderService) {
+                                               MenuItemService menu, OrderService orderService,
+                                               NotificationService notificationService) {
         List<OrderService.CartItem> cart = new ArrayList<>();
 
         while (true) {
@@ -232,6 +247,15 @@ System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
                     System.out.println("Status:   " + order.getStatus());
                     System.out.println("Address:  " + order.getDeliveryAddress());
                     System.out.println("Total:    $" + order.getTotal());
+
+                    // US3.3: Notify customer when order is placed
+                    notificationService.notifyStatusChange(
+                            order.getOrderId(),
+                            "NONE",
+                            "PENDING",
+                            "Your order has been placed and is waiting for confirmation."
+                    );
+
                     return;
                 } else {
                     System.out.println("Checkout failed due to delivery policy violation.");
@@ -247,7 +271,8 @@ System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
     }
 
     // ================= US2.4 - CANCEL ORDER =================
-    private static void handleCancelOrder(Scanner scanner, User user, OrderService orderService) {
+    private static void handleCancelOrder(Scanner scanner, User user, OrderService orderService,
+                                          NotificationService notificationService) {
         System.out.print("Enter Order ID to cancel: ");
         int orderId = readInt(scanner);
 
@@ -256,6 +281,13 @@ System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
         switch (result) {
             case CANCELLED:
                 System.out.println("Order cancelled successfully. Status is now CANCELLED.");
+                // US3.3: Notify customer when order is cancelled
+                notificationService.notifyStatusChange(
+                        orderId,
+                        "PENDING",
+                        "CANCELLED",
+                        "Your order has been cancelled."
+                );
                 break;
             case ALREADY_CANCELLED:
                 System.out.println("This order is already CANCELLED.");
@@ -274,14 +306,15 @@ System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
         }
     }
 
-    // ================= MANAGER MENU =================
+    // ================= MANAGER MENU (Sprint 1, 2, 3) =================
     private static void managerMenu(Scanner scanner, RestaurantService restaurants,
-                                    MenuItemService menu) {
+                                    MenuItemService menu, DeliveryService deliveryService) {
         while (true) {
             System.out.println("\n=== MANAGER MENU ===");
             System.out.println("1. View Restaurants & Menus");
             System.out.println("2. Change Restaurant Status");
             System.out.println("3. Change Menu Item Status");
+            System.out.println("4. Assign Driver to Order (Smart Selection)");
             System.out.println("0. Log out");
             System.out.print("Choice: ");
 
@@ -296,11 +329,52 @@ System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
                 case "3":
                     changeItem(scanner, menu);
                     break;
+                case "4":
+                    handleAssignDriver(scanner, deliveryService);
+                    break;
                 case "0":
                     return;
                 default:
                     System.out.println("Invalid choice.");
             }
+        }
+    }
+
+    // ================= US3.1 & US3.2 - ASSIGN DRIVER =================
+    private static void handleAssignDriver(Scanner scanner, DeliveryService deliveryService) {
+        System.out.print("Enter Order ID to assign driver: ");
+        int orderId = readInt(scanner);
+        if (orderId < 0) {
+            System.out.println("Invalid Order ID.");
+            return;
+        }
+
+        System.out.print("Enter Restaurant ID: ");
+        int restaurantId = readInt(scanner);
+        if (restaurantId < 0) {
+            System.out.println("Invalid Restaurant ID.");
+            return;
+        }
+
+        System.out.println("\nSelect Driver Assignment Strategy:");
+        System.out.println("1. Nearest Driver (closest to restaurant)");
+        System.out.println("2. Fastest Driver (lowest estimated arrival time)");
+        System.out.print("Choice: ");
+
+        int strategyChoice = readInt(scanner);
+        if (strategyChoice == 2) {
+            deliveryService.setStrategy(new FastestDriverStrategy());
+            System.out.println("Using Fastest Driver Strategy.");
+        } else {
+            deliveryService.setStrategy(new NearestDriverStrategy());
+            System.out.println("Using Nearest Driver Strategy.");
+        }
+
+        boolean assigned = deliveryService.assignDriverToOrder(orderId, restaurantId);
+        if (assigned) {
+            System.out.println("Driver assigned successfully!");
+        } else {
+            System.out.println("Driver assignment failed. No available driver found.");
         }
     }
 
