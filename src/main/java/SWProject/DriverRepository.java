@@ -6,11 +6,15 @@ import java.util.List;
 
 public class DriverRepository {
 
-    // US3.1: Fetch ONLY available drivers
+    // US3.1 & US3.2: only eligible AVAILABLE drivers are returned.
     public List<Driver> findAvailableDrivers() {
         List<Driver> drivers = new ArrayList<>();
         String query = "SELECT driver_id, name, driver_type, status, latitude, longitude, average_speed_kmh "
-                     + "FROM \"SWproject\".drivers WHERE status = 'AVAILABLE'";
+                     + "FROM \"SWproject\".drivers "
+                     + "WHERE status = 'AVAILABLE' "
+                     + "AND latitude IS NOT NULL AND longitude IS NOT NULL "
+                     + "AND average_speed_kmh IS NOT NULL AND average_speed_kmh > 0 "
+                     + "ORDER BY driver_id";
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(query);
@@ -34,7 +38,7 @@ public class DriverRepository {
         return drivers;
     }
 
-    // US3.1: Update driver status to BUSY/AVAILABLE in database
+    // Existing helper retained for compatibility.
     public boolean updateDriverStatus(int driverId, String newStatus) {
         String query = "UPDATE \"SWproject\".drivers SET status = ? WHERE driver_id = ?";
 

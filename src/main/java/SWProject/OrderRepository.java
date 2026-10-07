@@ -136,4 +136,89 @@ public class OrderRepository {
         return false;
     }
 
+    // US3.1: Atomically claim an AVAILABLE driver and assign it to a matching PENDING order.
+    public boolean assignAvailableDriverToOrder(int orderId, int restaurantId, int driverId) {
+        String claimDriverSql = "UPDATE \"SWproject\".drivers SET status = 'BUSY' "
+                + "WHERE driver_id = ? AND status = 'AVAILABLE'";
+
+        String assignOrderSql = "UPDATE \"SWproject\".orders "
+                + "SET driver_id = ?, status = 'CONFIRMED' "
+                + "WHERE order_id = ? AND restaurant_id = ? "
+                + "AND driver_id IS NULL AND status = 'PENDING'";
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
+
+            try {
+                try (PreparedStatement driverStmt = conn.prepareStatement(claimDriverSql)) {
+                    driverStmt.setInt(1, driverId);
+                    if (driverStmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return false;
+                    }
+                }
+
+                try (PreparedStatement orderStmt = conn.prepareStatement(assignOrderSql)) {
+                    orderStmt.setInt(1, driverId);
+                    orderStmt.setInt(2, orderId);
+                    orderStmt.setInt(3, restaurantId);
+
+                    if (orderStmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return false;
+                    }
+                }
+
+                conn.commit();
+                return true;
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error assigning available driver: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // US3.3: Read status by order ID so a status-change notification can include old/new status.
+    public String findOrderStatusById(int orderId) {
+        String query = "SELECT status FROM \"SWproject\".orders WHERE order_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, orderId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("status");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error finding order status: " + e.getMessage());
+        }
+
+        return null;
+    }
+
+    // US3.3/US3.4: Optimistic status update; succeeds only if status did not change meanwhile.
+    public boolean updateOrderStatusById(int orderId, String expectedOldStatus, String newStatus) {
+        String query = "UPDATE \"SWproject\".orders SET status = ? "
+                + "WHERE order_id = ? AND status = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, orderId);
+            stmt.setString(3, expectedOldStatus);
+            return stmt.executeUpdate() == 1;
+        } catch (SQLException e) {
+            System.err.println("Database error updating order status: " + e.getMessage());
+            return false;
+        }
+    }
+
 }

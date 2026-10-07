@@ -32,6 +32,10 @@ public class Main {
                 new NearestDriverStrategy()
         );
 
+        OrderStatusService orderStatusService = new OrderStatusService(
+                orderRepository, notificationService
+        );
+
         try (Scanner scanner = new Scanner(System.in)) {
             while (true) {
                 System.out.println("\n=== Food Delivery System ===");
@@ -47,7 +51,7 @@ public class Main {
 
                 if ("1".equals(choice)) {
                     login(scanner, authService, restaurantService, menuItemService,
-                          orderService, deliveryService, notificationService);
+                          orderService, deliveryService, notificationService, orderStatusService);
                 } else {
                     System.out.println("Invalid choice. Please enter 1 or 0.");
                 }
@@ -59,7 +63,8 @@ public class Main {
     private static void login(Scanner scanner, AuthService auth,
                               RestaurantService restaurants, MenuItemService menu,
                               OrderService orderService, DeliveryService deliveryService,
-                              NotificationService notificationService) {
+                              NotificationService notificationService,
+                              OrderStatusService orderStatusService) {
         System.out.print("Username or Email: ");
         String id = scanner.nextLine();
         System.out.print("Password: ");
@@ -75,7 +80,7 @@ public class Main {
         if (user.isCustomer()) {
             customerMenu(scanner, user, restaurants, menu, orderService, notificationService);
         } else if (user.isManager()) {
-            managerMenu(scanner, restaurants, menu, deliveryService);
+            managerMenu(scanner, restaurants, menu, deliveryService, orderStatusService);
         } else {
             System.out.println("Unsupported role: " + user.getRole());
         }
@@ -308,13 +313,15 @@ public class Main {
 
     // ================= MANAGER MENU (Sprint 1, 2, 3) =================
     private static void managerMenu(Scanner scanner, RestaurantService restaurants,
-                                    MenuItemService menu, DeliveryService deliveryService) {
+                                    MenuItemService menu, DeliveryService deliveryService,
+                                    OrderStatusService orderStatusService) {
         while (true) {
             System.out.println("\n=== MANAGER MENU ===");
             System.out.println("1. View Restaurants & Menus");
             System.out.println("2. Change Restaurant Status");
             System.out.println("3. Change Menu Item Status");
             System.out.println("4. Assign Driver to Order (Smart Selection)");
+            System.out.println("5. Change Order Status (Notifications)");
             System.out.println("0. Log out");
             System.out.print("Choice: ");
 
@@ -331,6 +338,9 @@ public class Main {
                     break;
                 case "4":
                     handleAssignDriver(scanner, deliveryService);
+                    break;
+                case "5":
+                    handleOrderStatusChange(scanner, orderStatusService);
                     break;
                 case "0":
                     return;
@@ -375,6 +385,63 @@ public class Main {
             System.out.println("Driver assigned successfully!");
         } else {
             System.out.println("Driver assignment failed. No available driver found.");
+        }
+    }
+
+    // ================= US3.3 & US3.4 - STATUS NOTIFICATIONS =================
+    private static void handleOrderStatusChange(Scanner scanner, OrderStatusService orderStatusService) {
+        System.out.print("Enter Order ID: ");
+        int orderId = readInt(scanner);
+        if (orderId <= 0) {
+            System.out.println("Invalid Order ID.");
+            return;
+        }
+
+        System.out.println("Select new status:");
+        System.out.println("1. PREPARING");
+        System.out.println("2. READY");
+        System.out.println("3. OUT_FOR_DELIVERY");
+        System.out.println("4. DELIVERED");
+        System.out.print("Choice: ");
+
+        int choice = readInt(scanner);
+        String newStatus;
+        switch (choice) {
+            case 1:
+                newStatus = "PREPARING";
+                break;
+            case 2:
+                newStatus = "READY";
+                break;
+            case 3:
+                newStatus = "OUT_FOR_DELIVERY";
+                break;
+            case 4:
+                newStatus = "DELIVERED";
+                break;
+            default:
+                System.out.println("Invalid status choice.");
+                return;
+        }
+
+        OrderStatusService.StatusChangeResult result =
+                orderStatusService.changeStatus(orderId, newStatus);
+
+        switch (result) {
+            case UPDATED:
+                System.out.println("Order status updated successfully.");
+                break;
+            case NOT_FOUND:
+                System.out.println("Order not found.");
+                break;
+            case NO_CHANGE:
+                System.out.println("Order already has that status.");
+                break;
+            case INVALID_STATUS:
+                System.out.println("Invalid order status.");
+                break;
+            default:
+                System.out.println("Order status update failed.");
         }
     }
 

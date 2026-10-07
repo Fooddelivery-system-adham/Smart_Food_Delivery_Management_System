@@ -9,9 +9,12 @@ import java.util.List;
 
 public class RestaurantRepository {
 
+    private static final String BASE_COLUMNS =
+            "restaurant_id, name, status, min_order_value, max_delivery_radius_km, latitude, longitude ";
+
     public List<Restaurant> findOpenRestaurants() {
         List<Restaurant> restaurants = new ArrayList<>();
-        String query = "SELECT restaurant_id, name, status, min_order_value, max_delivery_radius_km "
+        String query = "SELECT " + BASE_COLUMNS
                      + "FROM \"SWproject\".restaurants WHERE status = 'OPEN' ORDER BY restaurant_id";
 
         try (Connection conn = DatabaseConnection.getConnection();
@@ -19,13 +22,7 @@ public class RestaurantRepository {
              ResultSet rs = stmt.executeQuery()) {
 
             while (rs.next()) {
-                restaurants.add(new Restaurant(
-                    rs.getInt("restaurant_id"),
-                    rs.getString("name"),
-                    rs.getString("status"),
-                    rs.getDouble("min_order_value"),
-                    rs.getDouble("max_delivery_radius_km")
-                ));
+                restaurants.add(mapRestaurant(rs));
             }
         } catch (SQLException e) {
             System.err.println("Database error fetching open restaurants: " + e.getMessage());
@@ -36,7 +33,7 @@ public class RestaurantRepository {
 
     public List<Restaurant> findAll() {
         List<Restaurant> restaurants = new ArrayList<>();
-        String query = "SELECT restaurant_id, name, status, min_order_value, max_delivery_radius_km "
+        String query = "SELECT " + BASE_COLUMNS
                      + "FROM \"SWproject\".restaurants ORDER BY restaurant_id";
 
         try (Connection conn = DatabaseConnection.getConnection();
@@ -44,13 +41,7 @@ public class RestaurantRepository {
              ResultSet rs = stmt.executeQuery()) {
 
             while (rs.next()) {
-                restaurants.add(new Restaurant(
-                    rs.getInt("restaurant_id"),
-                    rs.getString("name"),
-                    rs.getString("status"),
-                    rs.getDouble("min_order_value"),
-                    rs.getDouble("max_delivery_radius_km")
-                ));
+                restaurants.add(mapRestaurant(rs));
             }
         } catch (SQLException e) {
             System.err.println("Database error fetching all restaurants: " + e.getMessage());
@@ -60,7 +51,7 @@ public class RestaurantRepository {
     }
 
     public Restaurant findById(int restaurantId) {
-        String query = "SELECT restaurant_id, name, status, min_order_value, max_delivery_radius_km "
+        String query = "SELECT " + BASE_COLUMNS
                      + "FROM \"SWproject\".restaurants WHERE restaurant_id = ?";
 
         try (Connection conn = DatabaseConnection.getConnection();
@@ -69,13 +60,7 @@ public class RestaurantRepository {
             stmt.setInt(1, restaurantId);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    return new Restaurant(
-                        rs.getInt("restaurant_id"),
-                        rs.getString("name"),
-                        rs.getString("status"),
-                        rs.getDouble("min_order_value"),
-                        rs.getDouble("max_delivery_radius_km")
-                    );
+                    return mapRestaurant(rs);
                 }
             }
         } catch (SQLException e) {
@@ -100,5 +85,17 @@ public class RestaurantRepository {
         }
 
         return false;
+    }
+
+    private Restaurant mapRestaurant(ResultSet rs) throws SQLException {
+        return new Restaurant(
+                rs.getInt("restaurant_id"),
+                rs.getString("name"),
+                rs.getString("status"),
+                rs.getDouble("min_order_value"),
+                rs.getDouble("max_delivery_radius_km"),
+                rs.getDouble("latitude"),
+                rs.getDouble("longitude")
+        );
     }
 }

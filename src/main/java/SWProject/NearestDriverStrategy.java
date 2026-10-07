@@ -11,12 +11,19 @@ public class NearestDriverStrategy implements DriverAssignmentStrategy {
         }
 
         Driver nearestDriver = null;
-        double minDistance = Double.MAX_VALUE;
+        double minDistanceKm = Double.MAX_VALUE;
 
         for (Driver driver : availableDrivers) {
-            double distance = calculateDistance(restaurantLat, restaurantLng, driver.getLatitude(), driver.getLongitude());
-            if (distance < minDistance) {
-                minDistance = distance;
+            if (!isEligible(driver)) {
+                continue;
+            }
+
+            double distanceKm = haversineKm(
+                    restaurantLat, restaurantLng,
+                    driver.getLatitude(), driver.getLongitude());
+
+            if (distanceKm < minDistanceKm) {
+                minDistanceKm = distanceKm;
                 nearestDriver = driver;
             }
         }
@@ -24,10 +31,23 @@ public class NearestDriverStrategy implements DriverAssignmentStrategy {
         return nearestDriver;
     }
 
-    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        // Approximate distance calculation using Euclidean distance formula
-        double latDiff = lat1 - lat2;
-        double lonDiff = lon1 - lon2;
-        return Math.sqrt(latDiff * latDiff + lonDiff * lonDiff) * 111.0; // ~111 km per degree
+    private boolean isEligible(Driver driver) {
+        return driver != null
+                && driver.isAvailable()
+                && Double.isFinite(driver.getLatitude())
+                && Double.isFinite(driver.getLongitude());
+    }
+
+    private double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final double earthRadiusKm = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadiusKm * c;
     }
 }

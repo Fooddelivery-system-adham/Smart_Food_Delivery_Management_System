@@ -21,44 +21,61 @@ public class DeliveryService {
     }
 
     public void setStrategy(DriverAssignmentStrategy strategy) {
-        this.assignmentStrategy = strategy;
+        if (strategy != null) {
+            this.assignmentStrategy = strategy;
+        }
     }
 
-    // US3.1 & US3.2: Assign driver using Strategy Pattern
+    // US3.1 & US3.2: Assign an available driver using the selected Strategy.
     public boolean assignDriverToOrder(int orderId, int restaurantId) {
-        // 1. Get ONLY available drivers (Acceptance US3.1)
-        List<Driver> availableDrivers = driverRepository.findAvailableDrivers();
-        if (availableDrivers.isEmpty()) {
-            System.out.println("Driver Assignment Rejected: No drivers are currently available.");
+        if (orderId <= 0 || restaurantId <= 0) {
+            System.out.println("Driver Assignment Rejected: Invalid order or restaurant ID.");
             return false;
         }
 
-        // Fetch restaurant location
         Restaurant restaurant = restaurantRepository.findById(restaurantId);
-        double restLat = (restaurant != null) ? 32.221111 : 0.0;
-        double restLng = (restaurant != null) ? 35.254444 : 0.0;
+        if (restaurant == null) {
+            System.out.println("Driver Assignment Rejected: Restaurant does not exist.");
+            return false;
+        }
 
-        // 2. Select driver using current strategy (US3.2)
-        Driver selectedDriver = assignmentStrategy.selectDriver(availableDrivers, restLat, restLng);
+        List<Driver> availableDrivers = driverRepository.findAvailableDrivers();
+        if (availableDrivers.isEmpty()) {
+            System.out.println("Driver Assignment Rejected: No eligible drivers are currently available.");
+            return false;
+        }
+
+        Driver selectedDriver = assignmentStrategy.selectDriver(
+                availableDrivers,
+                restaurant.getLatitude(),
+                restaurant.getLongitude());
+
         if (selectedDriver == null) {
             System.out.println("Driver Assignment Rejected: Strategy could not find an eligible driver.");
             return false;
         }
 
-        // 3. Record driver ID in order and update driver status to BUSY (US3.1)
-        boolean orderUpdated = orderRepository.assignDriverToOrder(orderId, selectedDriver.getDriverId());
-        if (orderUpdated) {
-            driverRepository.updateDriverStatus(selectedDriver.getDriverId(), "BUSY");
-            selectedDriver.setStatus("BUSY");
+        // One database transaction makes these two acceptance criteria atomic:
+        // 1) driver becomes BUSY, 2) order records the driver and becomes CONFIRMED.
+        boolean assigned = orderRepository.assignAvailableDriverToOrder(
+                orderId, restaurantId, selectedDriver.getDriverId());
 
-            // 4. Trigger Notification via Observer Pattern (US3.3)
-            notificationService.notifyStatusChange(
-                orderId, "PENDING", "CONFIRMED",
-                "Driver " + selectedDriver.getName() + " (" + selectedDriver.getDriverType() + ") assigned to your order!"
-            );
-            return true;
+        if (!assigned) {
+            System.out.println("Driver Assignment Rejected: Order is not PENDING, already has a driver, "
+                    + "restaurant does not match, or the selected driver is no longer AVAILABLE.");
+            return false;
         }
 
-        return false;
+        selectedDriver.setStatus("BUSY");
+
+        notificationService.notifyStatusChange(
+                orderId,
+                "PENDING",
+                "CONFIRMED",
+                "Driver " + selectedDriver.getName() + " (" + selectedDriver.getDriverType()
+                        + ") assigned to your order."
+        );
+
+        return true;
     }
 }
