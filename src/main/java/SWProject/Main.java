@@ -80,7 +80,8 @@ public class Main {
         if (user.isCustomer()) {
             customerMenu(scanner, user, restaurants, menu, orderService, notificationService);
         } else if (user.isManager()) {
-            managerMenu(scanner, restaurants, menu, deliveryService, orderStatusService);
+            // FIXED: Passing orderService to managerMenu
+            managerMenu(scanner, restaurants, menu, deliveryService, orderStatusService, orderService);
         } else {
             System.out.println("Unsupported role: " + user.getRole());
         }
@@ -93,10 +94,11 @@ public class Main {
         while (true) {
             System.out.println("\n=== CUSTOMER MENU ===");
             System.out.println("1. View Available Restaurants");
+            System.out.println("2. Track My Active Orders");
 
             boolean hasPending = orderService.hasPendingOrder(user.getUserId());
             if (hasPending) {
-                System.out.println("2. Cancel an Existing Order");
+                System.out.println("3. Cancel a Pending Order");
             }
 
             System.out.println("0. Log out");
@@ -111,13 +113,27 @@ public class Main {
             if (choice == 1) {
                 showAvailableRestaurants(scanner, user, restaurants, menu, orderService, notificationService);
             } else if (choice == 2) {
+                // Display current active orders to the customer
+                List<Order> myOrders = orderService.getActiveOrdersByCustomer(user.getUserId());
+                if (myOrders.isEmpty()) {
+                    System.out.println("\nYou do not have any active orders right now.");
+                } else {
+                    System.out.println("\n--- MY ACTIVE ORDERS ---");
+                    for (Order o : myOrders) {
+                        System.out.println("Order #" + o.getOrderId()
+                                + " | Status: [" + o.getStatus() + "]"
+                                + " | Total: $" + o.getTotal()
+                                + " | Address: " + o.getDeliveryAddress());
+                    }
+                }
+            } else if (choice == 3) {
                 if (!hasPending) {
                     System.out.println("No pending orders available to cancel.");
                     continue;
                 }
                 handleCancelOrder(scanner, user, orderService, notificationService);
             } else {
-                System.out.println("Invalid choice. Please enter 1, 2 (if available), or 0.");
+                System.out.println("Invalid choice.");
             }
         }
     }
@@ -226,8 +242,32 @@ public class Main {
                     continue;
                 }
 
-                System.out.print("Enter Delivery Address: ");
-                String address = scanner.nextLine().trim();
+                // Palestinian Cities Address Validation
+                String[] palestinianCities = {
+                    "ramallah", "nablus", "hebron", "jenin", "jerusalem",
+                    "bethlehem", "tulkarm", "qalqilya", "jericho", "gaza",
+                    "tubas", "salfit"
+                };
+
+                String address = "";
+                boolean validAddress = false;
+
+                while (!validAddress) {
+                    System.out.print("Enter Delivery Address (must start with a Palestinian city, e.g. Nablus, Ramallah): ");
+                    address = scanner.nextLine().trim();
+
+                    String lowerAddress = address.toLowerCase();
+                    for (String city : palestinianCities) {
+                        if (lowerAddress.startsWith(city)) {
+                            validAddress = true;
+                            break;
+                        }
+                    }
+
+                    if (!validAddress) {
+                        System.out.println("ERROR: We only deliver inside Palestine. Please start your address with a valid Palestinian city name.");
+                    }
+                }
 
                 System.out.print("Enter Delivery Distance in km: ");
                 double distance;
@@ -253,7 +293,6 @@ public class Main {
                     System.out.println("Address:  " + order.getDeliveryAddress());
                     System.out.println("Total:    $" + order.getTotal());
 
-                    // US3.3: Notify customer when order is placed
                     notificationService.notifyStatusChange(
                             order.getOrderId(),
                             "NONE",
@@ -286,7 +325,6 @@ public class Main {
         switch (result) {
             case CANCELLED:
                 System.out.println("Order cancelled successfully. Status is now CANCELLED.");
-                // US3.3: Notify customer when order is cancelled
                 notificationService.notifyStatusChange(
                         orderId,
                         "PENDING",
@@ -314,7 +352,7 @@ public class Main {
     // ================= MANAGER MENU (Sprint 1, 2, 3) =================
     private static void managerMenu(Scanner scanner, RestaurantService restaurants,
                                     MenuItemService menu, DeliveryService deliveryService,
-                                    OrderStatusService orderStatusService) {
+                                    OrderStatusService orderStatusService, OrderService orderService) {
         while (true) {
             System.out.println("\n=== MANAGER MENU ===");
             System.out.println("1. View Restaurants & Menus");
@@ -337,10 +375,12 @@ public class Main {
                     changeItem(scanner, menu);
                     break;
                 case "4":
-                    handleAssignDriver(scanner, deliveryService);
+                    // FIXED: Passed orderService
+                    handleAssignDriver(scanner, deliveryService, orderService);
                     break;
                 case "5":
-                    handleOrderStatusChange(scanner, orderStatusService);
+                    // FIXED: Passed orderService
+                    handleOrderStatusChange(scanner, orderStatusService, orderService);
                     break;
                 case "0":
                     return;
@@ -351,20 +391,37 @@ public class Main {
     }
 
     // ================= US3.1 & US3.2 - ASSIGN DRIVER =================
-    private static void handleAssignDriver(Scanner scanner, DeliveryService deliveryService) {
-        System.out.print("Enter Order ID to assign driver: ");
-        int orderId = readInt(scanner);
-        if (orderId < 0) {
-            System.out.println("Invalid Order ID.");
+    private static void handleAssignDriver(Scanner scanner, DeliveryService deliveryService, OrderService orderService) {
+        List<Order> pendingOrders = orderService.getPendingOrders();
+        if (pendingOrders.isEmpty()) {
+            System.out.println("\nThere are no PENDING orders waiting for a driver.");
             return;
         }
 
-        System.out.print("Enter Restaurant ID: ");
-        int restaurantId = readInt(scanner);
-        if (restaurantId < 0) {
-            System.out.println("Invalid Restaurant ID.");
+        System.out.println("\n--- PENDING ORDERS WAITING FOR DRIVER ---");
+        for (Order o : pendingOrders) {
+            System.out.println("Order #" + o.getOrderId()
+                    + " | Restaurant ID: " + o.getRestaurantId()
+                    + " | Address: " + o.getDeliveryAddress());
+        }
+
+        System.out.print("\nEnter Order ID to assign driver (or 0 to cancel): ");
+        int orderId = readInt(scanner);
+        if (orderId <= 0) {
             return;
         }
+
+        Order selectedOrder = pendingOrders.stream()
+                .filter(o -> o.getOrderId() == orderId)
+                .findFirst()
+                .orElse(null);
+
+        if (selectedOrder == null) {
+            System.out.println("Invalid Order ID. Please choose an ID from the list above.");
+            return;
+        }
+
+        int restaurantId = selectedOrder.getRestaurantId();
 
         System.out.println("\nSelect Driver Assignment Strategy:");
         System.out.println("1. Nearest Driver (closest to restaurant)");
@@ -389,15 +446,25 @@ public class Main {
     }
 
     // ================= US3.3 & US3.4 - STATUS NOTIFICATIONS =================
-    private static void handleOrderStatusChange(Scanner scanner, OrderStatusService orderStatusService) {
-        System.out.print("Enter Order ID: ");
-        int orderId = readInt(scanner);
-        if (orderId <= 0) {
-            System.out.println("Invalid Order ID.");
+    private static void handleOrderStatusChange(Scanner scanner, OrderStatusService orderStatusService, OrderService orderService) {
+        List<Order> activeOrders = orderService.getActiveOrdersForManager();
+        if (activeOrders.isEmpty()) {
+            System.out.println("\nThere are no active orders to update.");
             return;
         }
 
-        System.out.println("Select new status:");
+        System.out.println("\n--- ACTIVE ORDERS ---");
+        for (Order o : activeOrders) {
+            System.out.println("Order #" + o.getOrderId() + " | Current Status: [" + o.getStatus() + "]");
+        }
+
+        System.out.print("\nEnter Order ID to update (or 0 to cancel): ");
+        int orderId = readInt(scanner);
+        if (orderId <= 0) {
+            return;
+        }
+
+        System.out.println("\nSelect new status:");
         System.out.println("1. PREPARING");
         System.out.println("2. READY");
         System.out.println("3. OUT_FOR_DELIVERY");
@@ -407,26 +474,16 @@ public class Main {
         int choice = readInt(scanner);
         String newStatus;
         switch (choice) {
-            case 1:
-                newStatus = "PREPARING";
-                break;
-            case 2:
-                newStatus = "READY";
-                break;
-            case 3:
-                newStatus = "OUT_FOR_DELIVERY";
-                break;
-            case 4:
-                newStatus = "DELIVERED";
-                break;
+            case 1: newStatus = "PREPARING"; break;
+            case 2: newStatus = "READY"; break;
+            case 3: newStatus = "OUT_FOR_DELIVERY"; break;
+            case 4: newStatus = "DELIVERED"; break;
             default:
                 System.out.println("Invalid status choice.");
                 return;
         }
 
-        OrderStatusService.StatusChangeResult result =
-                orderStatusService.changeStatus(orderId, newStatus);
-
+        OrderStatusService.StatusChangeResult result = orderStatusService.changeStatus(orderId, newStatus);
         switch (result) {
             case UPDATED:
                 System.out.println("Order status updated successfully.");

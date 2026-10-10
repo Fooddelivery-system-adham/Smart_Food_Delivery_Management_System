@@ -1,8 +1,12 @@
 package SWProject;
 
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OrderRepository {
+
+    // US2.4: Check if customer has an active pending order
     public boolean hasPendingOrder(int customerId) {
         String query = "SELECT COUNT(*) as count FROM \"SWproject\".orders WHERE customer_id = ? AND status = 'PENDING'";
 
@@ -21,6 +25,8 @@ public class OrderRepository {
 
         return false;
     }
+
+    // US3.1: Assign driver to order
     public boolean assignDriverToOrder(int orderId, int driverId) {
         String query = "UPDATE \"SWproject\".orders SET driver_id = ?, status = 'CONFIRMED' WHERE order_id = ?";
 
@@ -37,7 +43,8 @@ public class OrderRepository {
 
         return false;
     }
-    // Saves order + order items inside a single SQL Transaction
+
+    // US2.1: Save order and order items inside a single SQL Transaction
     public boolean saveOrder(Order order) {
         String insertOrderSql = "INSERT INTO \"SWproject\".orders "
                 + "(customer_id, restaurant_id, order_type, status, delivery_address, total) "
@@ -114,7 +121,7 @@ public class OrderRepository {
             System.err.println("Database error finding order status: " + e.getMessage());
         }
 
-        return null; // Return null if order does not exist or belongs to another user
+        return null;
     }
 
     // US2.4: Update order status in PostgreSQL
@@ -136,7 +143,7 @@ public class OrderRepository {
         return false;
     }
 
-    // US3.1: Atomically claim an AVAILABLE driver and assign it to a matching PENDING order.
+    // US3.1: Atomically claim an AVAILABLE driver and assign it to a matching PENDING order
     public boolean assignAvailableDriverToOrder(int orderId, int restaurantId, int driverId) {
         String claimDriverSql = "UPDATE \"SWproject\".drivers SET status = 'BUSY' "
                 + "WHERE driver_id = ? AND status = 'AVAILABLE'";
@@ -183,7 +190,7 @@ public class OrderRepository {
         }
     }
 
-    // US3.3: Read status by order ID so a status-change notification can include old/new status.
+    // US3.3: Read status by order ID
     public String findOrderStatusById(int orderId) {
         String query = "SELECT status FROM \"SWproject\".orders WHERE order_id = ?";
 
@@ -203,7 +210,7 @@ public class OrderRepository {
         return null;
     }
 
-    // US3.3/US3.4: Optimistic status update; succeeds only if status did not change meanwhile.
+    // US3.3/US3.4: Status update by order ID
     public boolean updateOrderStatusById(int orderId, String expectedOldStatus, String newStatus) {
         String query = "UPDATE \"SWproject\".orders SET status = ? "
                 + "WHERE order_id = ? AND status = ?";
@@ -221,4 +228,53 @@ public class OrderRepository {
         }
     }
 
+    // ---------------------------------------------------------
+    // NEW METHODS FOR UX IMPROVEMENTS (Displaying Orders Lists)
+    // ---------------------------------------------------------
+
+    // For Manager: Fetch pending orders that need a driver
+    public List<Order> findPendingOrders() {
+        return fetchOrdersWithQuery(
+            "SELECT * FROM \"SWproject\".orders WHERE status = 'PENDING' ORDER BY order_id"
+        );
+    }
+
+    // For Manager: Fetch all active orders (not delivered and not cancelled)
+    public List<Order> findActiveOrdersForManager() {
+        return fetchOrdersWithQuery(
+            "SELECT * FROM \"SWproject\".orders WHERE status NOT IN ('DELIVERED', 'CANCELLED') ORDER BY order_id"
+        );
+    }
+
+    // For Customer: Fetch this customer's active orders
+    public List<Order> findActiveOrdersByCustomer(int customerId) {
+        String query = "SELECT * FROM \"SWproject\".orders WHERE customer_id = " + customerId
+                     + " AND status NOT IN ('DELIVERED', 'CANCELLED') ORDER BY order_id";
+        return fetchOrdersWithQuery(query);
+    }
+
+    // Helper method to execute query and construct Order objects
+    private List<Order> fetchOrdersWithQuery(String query) {
+        List<Order> orders = new ArrayList<>();
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                orders.add(new Order(
+                        rs.getInt("order_id"),
+                        rs.getInt("customer_id"),
+                        rs.getInt("restaurant_id"),
+                        rs.getString("order_type"),
+                        rs.getString("status"),
+                        rs.getString("delivery_address"),
+                        rs.getDouble("total"),
+                        new ArrayList<>() // Empty items list for summary display
+                ));
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error fetching orders: " + e.getMessage());
+        }
+        return orders;
+    }
 }
