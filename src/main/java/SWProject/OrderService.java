@@ -9,7 +9,7 @@ public class OrderService {
     private final MenuItemRepository menuItemRepository;
     private final RestaurantRepository restaurantRepository;
 
-    // US2.4: Result Enum for clean status messages
+    // Result enum for cancellation US2.4
     public enum CancellationResult {
         CANCELLED,
         ALREADY_CANCELLED,
@@ -25,10 +25,8 @@ public class OrderService {
         this.menuItemRepository = menuItemRepository;
         this.restaurantRepository = restaurantRepository;
     }
-    public boolean hasPendingOrder(int customerId) {
-        return orderRepository.hasPendingOrder(customerId);
-    }
-    // US2.1, US2.2, US2.3: Place a new order
+
+    // US2.1, US2.2, US2.3: Place a new order with validations
     public Order placeOrder(int customerId, int restaurantId, String deliveryAddress,
                             double deliveryDistanceKm, List<CartItem> cart) {
 
@@ -126,8 +124,6 @@ public class OrderService {
             return CancellationResult.ALREADY_CANCELLED;
         }
 
-        // US2.4 Acceptance Criteria: Only PENDING orders can be cancelled.
-        // Orders that have entered preparation (PREPARING, CONFIRMED, READY, etc.) CANNOT be cancelled.
         if (!"PENDING".equalsIgnoreCase(currentStatus)) {
             return CancellationResult.NOT_ALLOWED;
         }
@@ -140,7 +136,29 @@ public class OrderService {
         return CancellationResult.DATABASE_ERROR;
     }
 
+    // Helper method to check if customer has a pending order
+    public boolean hasPendingOrder(int customerId) {
+        return orderRepository.hasPendingOrder(customerId);
+    }
 
+    // --- UX IMPROVEMENT METHODS FOR DISPLAYING ORDERS LISTS ---
+
+    // For Manager: Fetch pending orders that need driver assignment
+    public List<Order> getPendingOrders() {
+        return orderRepository.findPendingOrders();
+    }
+
+    // For Manager: Fetch active orders for status changes
+    public List<Order> getActiveOrdersForManager() {
+        return orderRepository.findActiveOrdersForManager();
+    }
+
+    // For Customer: Fetch active orders for live tracking
+    public List<Order> getActiveOrdersByCustomer(int customerId) {
+        return orderRepository.findActiveOrdersByCustomer(customerId);
+    }
+
+    // Simple helper class representing item choice from console
     public static class CartItem {
         private final int itemId;
         private final int quantity;
