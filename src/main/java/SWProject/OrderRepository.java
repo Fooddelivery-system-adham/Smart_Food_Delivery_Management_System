@@ -254,7 +254,7 @@ public class OrderRepository {
         return fetchOrdersWithQuery(query);
     }
 
-    // Helper method to execute query and construct Order objects
+    // Helper method to execute query and construct correct Order polymorphic objects
     private List<Order> fetchOrdersWithQuery(String query) {
         List<Order> orders = new ArrayList<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -262,16 +262,26 @@ public class OrderRepository {
              ResultSet rs = stmt.executeQuery()) {
 
             while (rs.next()) {
-                orders.add(new Order(
-                        rs.getInt("order_id"),
-                        rs.getInt("customer_id"),
-                        rs.getInt("restaurant_id"),
-                        rs.getString("order_type"),
-                        rs.getString("status"),
-                        rs.getString("delivery_address"),
-                        rs.getDouble("total"),
-                        new ArrayList<>()
-                ));
+                String type = rs.getString("order_type");
+                Order order;
+
+                // Factory logic to create the correct Order Subclass
+                if ("EXPRESS".equalsIgnoreCase(type)) {
+                    order = new ExpressOrder(rs.getInt("order_id"), rs.getInt("customer_id"), 
+                            rs.getInt("restaurant_id"), rs.getString("status"), rs.getString("delivery_address"), 
+                            0.0, 0.0, 0.0, 0.0, rs.getDouble("total"), new ArrayList<>());
+                } else if ("SCHEDULED".equalsIgnoreCase(type)) {
+                    order = new ScheduledOrder(rs.getInt("order_id"), rs.getInt("customer_id"), 
+                            rs.getInt("restaurant_id"), rs.getString("status"), rs.getString("delivery_address"), 
+                            0.0, 0.0, 0.0, 0.0, rs.getDouble("total"), new ArrayList<>(), "Future Time");
+                } else {
+                    order = new StandardOrder(rs.getInt("order_id"), rs.getInt("customer_id"), 
+                            rs.getInt("restaurant_id"), rs.getString("status"), rs.getString("delivery_address"), 
+                            0.0, 0.0, 0.0, 0.0, rs.getDouble("total"), new ArrayList<>());
+                }
+
+                order.applyTypeRules(); // Apply the polymorphic rules
+                orders.add(order);
             }
         } catch (SQLException e) {
             System.err.println("Database error fetching orders: " + e.getMessage());

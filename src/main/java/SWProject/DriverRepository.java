@@ -21,15 +21,30 @@ public class DriverRepository {
              ResultSet rs = stmt.executeQuery()) {
 
             while (rs.next()) {
-                drivers.add(new Driver(
-                    rs.getInt("driver_id"),
-                    rs.getString("name"),
-                    rs.getString("driver_type"),
-                    rs.getString("status"),
-                    rs.getDouble("latitude"),
-                    rs.getDouble("longitude"),
-                    rs.getDouble("average_speed_kmh")
-                ));
+                int id = rs.getInt("driver_id");
+                String name = rs.getString("name");
+                String type = rs.getString("driver_type");
+                String status = rs.getString("status");
+                double lat = rs.getDouble("latitude");
+                double lon = rs.getDouble("longitude");
+                double speed = rs.getDouble("average_speed_kmh");
+
+                Driver driver;
+                switch (type.toUpperCase()) {
+                    case "BICYCLE":
+                        driver = new BicycleDriver(id, name, status, lat, lon, speed);
+                        break;
+                    case "CAR":
+                        driver = new CarDriver(id, name, status, lat, lon, speed);
+                        break;
+                    case "ELECTRIC_VEHICLE":
+                        driver = new ElectricVehicleDriver(id, name, status, lat, lon, speed);
+                        break;
+                    default:  
+                        driver = new MotorcycleDriver(id, name, status, lat, lon, speed);
+                        break;
+                }
+                drivers.add(driver);
             }
         } catch (SQLException e) {
             System.err.println("Database error fetching drivers: " + e.getMessage());
@@ -37,7 +52,6 @@ public class DriverRepository {
 
         return drivers;
     }
-
     // Existing helper retained for compatibility.
     public boolean updateDriverStatus(int driverId, String newStatus) {
         String query = "UPDATE \"SWproject\".drivers SET status = ? WHERE driver_id = ?";
@@ -54,5 +68,46 @@ public class DriverRepository {
         }
 
         return false;
+    }
+    // Add this method inside DriverRepository.java
+    public List<Driver> getAllDrivers() {
+        List<Driver> drivers = new ArrayList<>();
+        String sql = "SELECT * FROM \"SWproject\".drivers";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                int id = rs.getInt("driver_id");
+                String name = rs.getString("name");
+                String type = rs.getString("driver_type");
+                String status = rs.getString("status");
+                double lat = rs.getDouble("latitude");
+                double lon = rs.getDouble("longitude");
+                double speed = rs.getDouble("average_speed_kmh");
+
+                Driver driver;
+                switch (type.toUpperCase()) {
+                    case "BICYCLE":
+                        driver = new BicycleDriver(id, name, status, lat, lon, speed);
+                        break;
+                    case "MOTORCYCLE":
+                        driver = new MotorcycleDriver(id, name, status, lat, lon, speed);
+                        break;
+                    case "ELECTRICVEHICLE":
+                        driver = new ElectricVehicleDriver(id, name, status, lat, lon, speed);
+                        break;
+                    case "CAR":
+                    default:
+                        driver = new CarDriver(id, name, status, lat, lon, speed);
+                        break;
+                }
+                drivers.add(driver);
+            }
+        } catch (SQLException e) {
+            System.err.println("Database Error: " + e.getMessage());
+        }
+        return drivers;
     }
 }

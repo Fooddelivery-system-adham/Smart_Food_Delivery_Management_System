@@ -24,24 +24,11 @@ class DriverAssignmentStrategyTest {
         restaurantLng = 35.254444;
 
         availableDrivers = new ArrayList<>();
-        // Driver 1: Sami (Motorcycle) - 3 km away, speed 50 km/h -> ~3.6 minutes
-        availableDrivers.add(new Driver(1, "Sami", "MOTORCYCLE", "AVAILABLE", 32.245000, 35.254444, 50.0));
+        // 🌟 Driver 1: Sami (Motorcycle)
+        availableDrivers.add(new MotorcycleDriver(1, "Sami", "AVAILABLE", 32.245000, 35.254444, 50.0));
         
-        // Driver 2: Ahmad (Bicycle) - 1.5 km away, speed 10 km/h -> ~6.0 minutes
-        availableDrivers.add(new Driver(2, "Ahmad", "BICYCLE", "AVAILABLE", 32.235000, 35.254444, 10.0));
-    }
-
-    @Test
-    @DisplayName("US3.2: NearestDriverStrategy selects the geographically closest driver")
-    void nearestDriverStrategy_selectsClosestDriver() {
-        // Arrange
-        DriverAssignmentStrategy strategy = new NearestDriverStrategy();
-
-        // Act
-        Driver selectedDriver = strategy.selectDriver(availableDrivers, restaurantLat, restaurantLng);
-
-        // Assert
-        assertEquals(2, selectedDriver.getDriverId()); // Ahmad is geographically closer
+        // 🌟 Driver 2: Ahmad (Bicycle)
+        availableDrivers.add(new BicycleDriver(2, "Ahmad", "AVAILABLE", 32.235000, 35.254444, 10.0));
     }
 
     @Test

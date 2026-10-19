@@ -12,9 +12,8 @@ public class UserRepository {
             return null;
         }
 
-        // Added \"SWproject\".users so PostgreSQL finds the exact case-sensitive schema
-        String query = "SELECT user_id, username, email, password, role FROM \"SWproject\".users "
-                     + "WHERE username = ? OR email = ?";
+        String query = "SELECT user_id, username, email, password, role, latitude, longitude "
+                     + "FROM \"SWproject\".users WHERE username = ? OR email = ?";
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(query)) {
@@ -30,7 +29,9 @@ public class UserRepository {
                         rs.getString("username"),
                         rs.getString("email"),
                         rs.getString("password"),
-                        rs.getString("role")
+                        rs.getString("role"),
+                        rs.getDouble("latitude"),
+                        rs.getDouble("longitude") 
                     );
                 }
             }

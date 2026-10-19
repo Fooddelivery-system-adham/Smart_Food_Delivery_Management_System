@@ -2,12 +2,12 @@ package SWProject;
 
 import java.util.List;
 
-public class Order {
+public abstract class Order {
     private int orderId;
     private final int customerId;
     private final int restaurantId;
     private Integer driverId;
-    private final String orderType;
+    private final String orderType; // STANDARD, EXPRESS, SCHEDULED
     private String status;
     private final String deliveryAddress;
     private final double deliveryDistanceKm;
@@ -17,7 +17,10 @@ public class Order {
     private final double total;
     private final List<OrderItem> items;
 
-    // Full 12-parameter constructor for Sprint 4 (Detailed Invoice)
+    // Polymorphic fields
+    protected double additionalTypeFee = 0.0;
+    protected String scheduledTime = "ASAP";
+
     public Order(int orderId, int customerId, int restaurantId, String orderType,
                  String status, String deliveryAddress, double deliveryDistanceKm,
                  double subtotal, double deliveryFee, double discountAmount,
@@ -36,11 +39,13 @@ public class Order {
         this.items = items;
     }
 
-    // Overloaded 8-parameter constructor for backward compatibility with simple queries
     public Order(int orderId, int customerId, int restaurantId, String orderType,
                  String status, String deliveryAddress, double total, List<OrderItem> items) {
         this(orderId, customerId, restaurantId, orderType, status, deliveryAddress, 0.0, total, 0.0, 0.0, total, items);
     }
+
+    // Abstract method to be overridden by subclasses (US5.2)
+    public abstract void applyTypeRules();
 
     public int getOrderId() { return orderId; }
     public void setOrderId(int orderId) { this.orderId = orderId; }
@@ -56,6 +61,18 @@ public class Order {
     public double getSubtotal() { return subtotal; }
     public double getDeliveryFee() { return deliveryFee; }
     public double getDiscountAmount() { return discountAmount; }
-    public double getTotal() { return total; }
     public List<OrderItem> getItems() { return items; }
+    
+    public String getScheduledTime() { return scheduledTime; }
+
+    // Final total includes the base total + any extra fees applied by the specific order type
+    public double getTotal() { 
+        return total + additionalTypeFee; 
+    }
+    // أضف هذه الدوال داخل Order.java
+    public double getAdditionalTypeFee() {
+        return additionalTypeFee;
+    }
+
+ 
 }

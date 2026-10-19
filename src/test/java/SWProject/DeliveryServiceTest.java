@@ -29,7 +29,7 @@ class DeliveryServiceTest {
         public List<Driver> findAvailableDrivers() {
             if (!driversAvailable) return new ArrayList<>();
             List<Driver> list = new ArrayList<>();
-            list.add(new Driver(1, "Sami", "MOTORCYCLE", "AVAILABLE", 32.225000, 35.258000, 45.0));
+            list.add(new MotorcycleDriver(1, "Sami", "AVAILABLE", 32.225000, 35.258000, 45.0));
             return list;
         }
 
@@ -38,7 +38,6 @@ class DeliveryServiceTest {
             return true;
         }
     }
-
     // Fake Order Repository - Submitting the correct assignment method
     private static class FakeOrderRepository extends OrderRepository {
         private boolean assignmentSuccess = true;
