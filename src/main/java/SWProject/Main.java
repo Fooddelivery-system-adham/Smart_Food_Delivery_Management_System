@@ -19,7 +19,7 @@ public class Main {
         OrderRepository orderRepository = new OrderRepository();
         OrderService orderService = new OrderService(orderRepository, menuItemRepository, restaurantRepository);
 
-        // Sprint 3: Delivery and Notification setup
+        // Sprint 3 & 4 setup
         DriverRepository driverRepository = new DriverRepository();
         NotificationService notificationService = new NotificationService();
         notificationService.addObserver(new CustomerConsoleNotifier());
@@ -80,14 +80,13 @@ public class Main {
         if (user.isCustomer()) {
             customerMenu(scanner, user, restaurants, menu, orderService, notificationService);
         } else if (user.isManager()) {
-            // FIXED: Passing orderService to managerMenu
             managerMenu(scanner, restaurants, menu, deliveryService, orderStatusService, orderService);
         } else {
             System.out.println("Unsupported role: " + user.getRole());
         }
     }
 
-    // ================= CUSTOMER MENU (Sprint 1, 2, 3) =================
+    // ================= CUSTOMER MENU =================
     private static void customerMenu(Scanner scanner, User user, RestaurantService restaurants,
                                      MenuItemService menu, OrderService orderService,
                                      NotificationService notificationService) {
@@ -113,7 +112,6 @@ public class Main {
             if (choice == 1) {
                 showAvailableRestaurants(scanner, user, restaurants, menu, orderService, notificationService);
             } else if (choice == 2) {
-                // Display current active orders to the customer
                 List<Order> myOrders = orderService.getActiveOrdersByCustomer(user.getUserId());
                 if (myOrders.isEmpty()) {
                     System.out.println("\nYou do not have any active orders right now.");
@@ -278,6 +276,68 @@ public class Main {
                     continue;
                 }
 
+                // US4.3: Dynamic Pricing Selection based on Manager Configuration
+                System.out.println("\nSelect Pricing Strategy:");
+
+                if (PricingConfig.isPeakHourEnabled()) {
+                    System.out.println("1. Peak-Hour Pricing (+20% on food)   [AVAILABLE]");
+                    System.out.println("2. Normal Pricing                    [Not available now]");
+                    System.out.println("3. Express Delivery Pricing (+$7)    [Not available now]");
+                    System.out.println("4. Promotional Pricing (10% off)     [Not available now]");
+                    System.out.print("Choice: ");
+
+                    int pricingChoice = readInt(scanner);
+                    if (pricingChoice != 1) {
+                        System.out.println("Only Peak-Hour pricing is active right now (Manager enabled Peak-Hour mode).");
+                    }
+                    orderService.setPricingStrategy(new PeakHourPricingStrategy());
+                    System.out.println("Applied: Peak-Hour Pricing Strategy.");
+
+                } else if (PricingConfig.isPromotionalEnabled()) {
+                    System.out.println("1. Normal Pricing                    [AVAILABLE]");
+                    System.out.println("2. Express Delivery Pricing (+$7)    [AVAILABLE]");
+                    System.out.println("3. Promotional Pricing (10% off)     [AVAILABLE]");
+                    System.out.println("4. Peak-Hour Pricing (+20% on food)  [Not available now]");
+                    System.out.print("Choice: ");
+
+                    int pricingChoice = readInt(scanner);
+                    if (pricingChoice == 2) {
+                        orderService.setPricingStrategy(new ExpressDeliveryPricingStrategy());
+                        System.out.println("Applied: Express Delivery Pricing Strategy.");
+                    } else if (pricingChoice == 3) {
+                        orderService.setPricingStrategy(new PromotionalPricingStrategy());
+                        System.out.println("Applied: Promotional Pricing Strategy.");
+                    } else if (pricingChoice == 4) {
+                        System.out.println("Peak-Hour mode is currently disabled by Manager.");
+                        orderService.setPricingStrategy(new NormalPricingStrategy());
+                        System.out.println("Applied: Normal Pricing Strategy.");
+                    } else {
+                        orderService.setPricingStrategy(new NormalPricingStrategy());
+                        System.out.println("Applied: Normal Pricing Strategy.");
+                    }
+
+                } else {
+                    System.out.println("1. Normal Pricing                    [AVAILABLE]");
+                    System.out.println("2. Express Delivery Pricing (+$7)    [AVAILABLE]");
+                    System.out.println("3. Peak-Hour Pricing (+20% on food)  [Not available now]");
+                    System.out.println("4. Promotional Pricing (10% off)     [Not available now]");
+                    System.out.print("Choice: ");
+
+                    int pricingChoice = readInt(scanner);
+                    if (pricingChoice == 2) {
+                        orderService.setPricingStrategy(new ExpressDeliveryPricingStrategy());
+                        System.out.println("Applied: Express Delivery Pricing Strategy.");
+                    } else if (pricingChoice == 3 || pricingChoice == 4) {
+                        System.out.println("This pricing option is not active now. Ask Manager to enable it.");
+                        orderService.setPricingStrategy(new NormalPricingStrategy());
+                        System.out.println("Applied: Normal Pricing Strategy.");
+                    } else {
+                        orderService.setPricingStrategy(new NormalPricingStrategy());
+                        System.out.println("Applied: Normal Pricing Strategy.");
+                    }
+                }
+
+                // Place the order
                 Order order = orderService.placeOrder(
                         user.getUserId(),
                         r.getRestaurantId(),
@@ -287,11 +347,20 @@ public class Main {
                 );
 
                 if (order != null) {
-                    System.out.println("\nOrder Placed Successfully!");
-                    System.out.println("Order ID: " + order.getOrderId());
-                    System.out.println("Status:   " + order.getStatus());
-                    System.out.println("Address:  " + order.getDeliveryAddress());
-                    System.out.println("Total:    $" + order.getTotal());
+                    // Detailed Receipt Output for US4.2 & US4.3
+                    System.out.println("\n==========================================");
+                    System.out.println("🎉 ORDER PLACED SUCCESSFULLY!");
+                    System.out.println("Order ID:     #" + order.getOrderId());
+                    System.out.println("Status:       " + order.getStatus());
+                    System.out.println("Address:      " + order.getDeliveryAddress());
+                    System.out.println("Distance:     " + order.getDeliveryDistanceKm() + " km");
+                    System.out.println("------------------------------------------");
+                    System.out.println("Food Subtotal: $" + order.getSubtotal());
+                    System.out.println("Delivery Fee:  $" + order.getDeliveryFee());
+                    System.out.println("Discount:      -$" + order.getDiscountAmount());
+                    System.out.println("------------------------------------------");
+                    System.out.println("FINAL TOTAL:   $" + order.getTotal());
+                    System.out.println("==========================================");
 
                     notificationService.notifyStatusChange(
                             order.getOrderId(),
@@ -349,7 +418,7 @@ public class Main {
         }
     }
 
-    // ================= MANAGER MENU (Sprint 1, 2, 3) =================
+    // ================= MANAGER MENU =================
     private static void managerMenu(Scanner scanner, RestaurantService restaurants,
                                     MenuItemService menu, DeliveryService deliveryService,
                                     OrderStatusService orderStatusService, OrderService orderService) {
@@ -359,7 +428,8 @@ public class Main {
             System.out.println("2. Change Restaurant Status");
             System.out.println("3. Change Menu Item Status");
             System.out.println("4. Assign Driver to Order (Smart Selection)");
-            System.out.println("5. Change Order Status (Notifications)");
+            System.out.println("5. Change Order Status (Lifecycle Transitions)");
+            System.out.println("6. Configure Pricing Mode (Peak / Promo)");
             System.out.println("0. Log out");
             System.out.print("Choice: ");
 
@@ -375,12 +445,13 @@ public class Main {
                     changeItem(scanner, menu);
                     break;
                 case "4":
-                    // FIXED: Passed orderService
                     handleAssignDriver(scanner, deliveryService, orderService);
                     break;
                 case "5":
-                    // FIXED: Passed orderService
                     handleOrderStatusChange(scanner, orderStatusService, orderService);
+                    break;
+                case "6":
+                    handlePricingConfig(scanner);
                     break;
                 case "0":
                     return;
@@ -390,7 +461,46 @@ public class Main {
         }
     }
 
-    // ================= US3.1 & US3.2 - ASSIGN DRIVER =================
+    // ================= MANAGER PRICING CONTROL =================
+    private static void handlePricingConfig(Scanner scanner) {
+        while (true) {
+            System.out.println("\n=== PRICING CONFIGURATION ===");
+            System.out.println("Current Mode: " + PricingConfig.getCurrentModeLabel());
+            System.out.println("1. Enable Peak-Hour Pricing (+20% on food)");
+            System.out.println("2. Disable Peak-Hour Pricing");
+            System.out.println("3. Enable Promotional Pricing (10% off food)");
+            System.out.println("4. Disable Promotional Pricing");
+            System.out.println("0. Back");
+            System.out.print("Choice: ");
+
+            int choice = readInt(scanner);
+            if (choice == 0) {
+                return;
+            }
+
+            if (choice == 1) {
+                PricingConfig.setPeakHourEnabled(true);
+                System.out.println("Peak-Hour mode ENABLED. Customers will now use Peak-Hour pricing.");
+            } else if (choice == 2) {
+                PricingConfig.setPeakHourEnabled(false);
+                System.out.println("Peak-Hour mode DISABLED.");
+            } else if (choice == 3) {
+                if (PricingConfig.isPeakHourEnabled()) {
+                    System.out.println("Cannot enable Promo while Peak-Hour is active. Disable Peak-Hour first.");
+                } else {
+                    PricingConfig.setPromotionalEnabled(true);
+                    System.out.println("Promotional mode ENABLED. Customers can now select Promotional pricing.");
+                }
+            } else if (choice == 4) {
+                PricingConfig.setPromotionalEnabled(false);
+                System.out.println("Promotional mode DISABLED.");
+            } else {
+                System.out.println("Invalid choice.");
+            }
+        }
+    }
+
+    // ================= ASSIGN DRIVER =================
     private static void handleAssignDriver(Scanner scanner, DeliveryService deliveryService, OrderService orderService) {
         List<Order> pendingOrders = orderService.getPendingOrders();
         if (pendingOrders.isEmpty()) {
@@ -445,7 +555,7 @@ public class Main {
         }
     }
 
-    // ================= US3.3 & US3.4 - STATUS NOTIFICATIONS =================
+    // ================= ORDER STATUS CHANGE =================
     private static void handleOrderStatusChange(Scanner scanner, OrderStatusService orderStatusService, OrderService orderService) {
         List<Order> activeOrders = orderService.getActiveOrdersForManager();
         if (activeOrders.isEmpty()) {
@@ -465,19 +575,21 @@ public class Main {
         }
 
         System.out.println("\nSelect new status:");
-        System.out.println("1. PREPARING");
-        System.out.println("2. READY");
-        System.out.println("3. OUT_FOR_DELIVERY");
-        System.out.println("4. DELIVERED");
+        System.out.println("1. CONFIRMED");
+        System.out.println("2. PREPARING");
+        System.out.println("3. READY");
+        System.out.println("4. OUT_FOR_DELIVERY");
+        System.out.println("5. DELIVERED");
         System.out.print("Choice: ");
 
         int choice = readInt(scanner);
         String newStatus;
         switch (choice) {
-            case 1: newStatus = "PREPARING"; break;
-            case 2: newStatus = "READY"; break;
-            case 3: newStatus = "OUT_FOR_DELIVERY"; break;
-            case 4: newStatus = "DELIVERED"; break;
+            case 1: newStatus = "CONFIRMED"; break;
+            case 2: newStatus = "PREPARING"; break;
+            case 3: newStatus = "READY"; break;
+            case 4: newStatus = "OUT_FOR_DELIVERY"; break;
+            case 5: newStatus = "DELIVERED"; break;
             default:
                 System.out.println("Invalid status choice.");
                 return;
@@ -496,6 +608,12 @@ public class Main {
                 break;
             case INVALID_STATUS:
                 System.out.println("Invalid order status.");
+                break;
+            case INVALID_TRANSITION:
+                System.out.println("❌ INVALID STATE TRANSITION: Cannot jump directly to this status!");
+                break;
+            case DELIVERED_LOCKED:
+                System.out.println("🔒 ORDER LOCKED: Delivered or Cancelled orders cannot be modified!");
                 break;
             default:
                 System.out.println("Order status update failed.");

@@ -26,7 +26,7 @@ public class OrderRepository {
         return false;
     }
 
-    // US3.1: Assign driver to order
+    // US3.1: Simple driver assignment to order
     public boolean assignDriverToOrder(int orderId, int driverId) {
         String query = "UPDATE \"SWproject\".orders SET driver_id = ?, status = 'CONFIRMED' WHERE order_id = ?";
 
@@ -44,106 +44,7 @@ public class OrderRepository {
         return false;
     }
 
-    // US2.1: Save order and order items inside a single SQL Transaction
-    public boolean saveOrder(Order order) {
-        String insertOrderSql = "INSERT INTO \"SWproject\".orders "
-                + "(customer_id, restaurant_id, order_type, status, delivery_address, total) "
-                + "VALUES (?, ?, ?, ?, ?, ?) RETURNING order_id";
-
-        String insertItemSql = "INSERT INTO \"SWproject\".order_items "
-                + "(order_id, item_id, quantity, unit_price) VALUES (?, ?, ?, ?)";
-
-        try (Connection conn = DatabaseConnection.getConnection()) {
-            conn.setAutoCommit(false); // Start Transaction
-
-            int generatedOrderId = -1;
-
-            // 1. Insert into orders table
-            try (PreparedStatement stmt = conn.prepareStatement(insertOrderSql)) {
-                stmt.setInt(1, order.getCustomerId());
-                stmt.setInt(2, order.getRestaurantId());
-                stmt.setString(3, order.getOrderType());
-                stmt.setString(4, order.getStatus());
-                stmt.setString(5, order.getDeliveryAddress());
-                stmt.setDouble(6, order.getTotal());
-
-                try (ResultSet rs = stmt.executeQuery()) {
-                    if (rs.next()) {
-                        generatedOrderId = rs.getInt(1);
-                        order.setOrderId(generatedOrderId);
-                    }
-                }
-            }
-
-            if (generatedOrderId == -1) {
-                conn.rollback();
-                return false;
-            }
-
-            // 2. Insert line items into order_items table
-            try (PreparedStatement itemStmt = conn.prepareStatement(insertItemSql)) {
-                for (OrderItem item : order.getItems()) {
-                    itemStmt.setInt(1, generatedOrderId);
-                    itemStmt.setInt(2, item.getItemId());
-                    itemStmt.setInt(3, item.getQuantity());
-                    itemStmt.setDouble(4, item.getUnitPrice());
-                    itemStmt.addBatch();
-                }
-                itemStmt.executeBatch();
-            }
-
-            conn.commit(); // Commit Transaction
-            return true;
-
-        } catch (SQLException e) {
-            System.err.println("Database error placing order: " + e.getMessage());
-        }
-
-        return false;
-    }
-
-    // US2.4: Find the current status of an order for a specific customer
-    public String findOrderStatus(int orderId, int customerId) {
-        String query = "SELECT status FROM \"SWproject\".orders WHERE order_id = ? AND customer_id = ?";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(query)) {
-
-            stmt.setInt(1, orderId);
-            stmt.setInt(2, customerId);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getString("status");
-                }
-            }
-        } catch (SQLException e) {
-            System.err.println("Database error finding order status: " + e.getMessage());
-        }
-
-        return null;
-    }
-
-    // US2.4: Update order status in PostgreSQL
-    public boolean updateOrderStatus(int orderId, int customerId, String newStatus) {
-        String query = "UPDATE \"SWproject\".orders SET status = ? WHERE order_id = ? AND customer_id = ?";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(query)) {
-
-            stmt.setString(1, newStatus);
-            stmt.setInt(2, orderId);
-            stmt.setInt(3, customerId);
-
-            return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            System.err.println("Database error updating order status: " + e.getMessage());
-        }
-
-        return false;
-    }
-
-    // US3.1: Atomically claim an AVAILABLE driver and assign it to a matching PENDING order
+    // US3.1: Atomic transaction to claim an available driver and assign to order
     public boolean assignAvailableDriverToOrder(int orderId, int restaurantId, int driverId) {
         String claimDriverSql = "UPDATE \"SWproject\".drivers SET status = 'BUSY' "
                 + "WHERE driver_id = ? AND status = 'AVAILABLE'";
@@ -190,6 +91,110 @@ public class OrderRepository {
         }
     }
 
+    // US2.1 & Sprint 4: Save order with detailed bill breakdown inside a single SQL Transaction
+    public boolean saveOrder(Order order) {
+        String insertOrderSql = "INSERT INTO \"SWproject\".orders "
+                + "(customer_id, restaurant_id, order_type, status, delivery_address, "
+                + "delivery_distance_km, subtotal, delivery_fee, discount_amount, total) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING order_id";
+
+        String insertItemSql = "INSERT INTO \"SWproject\".order_items "
+                + "(order_id, item_id, quantity, unit_price) VALUES (?, ?, ?, ?)";
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false); // Start Transaction
+
+            int generatedOrderId = -1;
+
+            // 1. Insert into orders table
+            try (PreparedStatement stmt = conn.prepareStatement(insertOrderSql)) {
+                stmt.setInt(1, order.getCustomerId());
+                stmt.setInt(2, order.getRestaurantId());
+                stmt.setString(3, order.getOrderType());
+                stmt.setString(4, order.getStatus());
+                stmt.setString(5, order.getDeliveryAddress());
+                stmt.setDouble(6, order.getDeliveryDistanceKm());
+                stmt.setDouble(7, order.getSubtotal());
+                stmt.setDouble(8, order.getDeliveryFee());
+                stmt.setDouble(9, order.getDiscountAmount());
+                stmt.setDouble(10, order.getTotal());
+
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        generatedOrderId = rs.getInt(1);
+                        order.setOrderId(generatedOrderId);
+                    }
+                }
+            }
+
+            if (generatedOrderId == -1) {
+                conn.rollback();
+                return false;
+            }
+
+            // 2. Insert line items into order_items table
+            try (PreparedStatement itemStmt = conn.prepareStatement(insertItemSql)) {
+                for (OrderItem item : order.getItems()) {
+                    itemStmt.setInt(1, generatedOrderId);
+                    itemStmt.setInt(2, item.getItemId());
+                    itemStmt.setInt(3, item.getQuantity());
+                    itemStmt.setDouble(4, item.getUnitPrice());
+                    itemStmt.addBatch();
+                }
+                itemStmt.executeBatch();
+            }
+
+            conn.commit(); // Commit Transaction
+            return true;
+
+        } catch (SQLException e) {
+            System.err.println("Database error placing order: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    // US2.4: Find order status by order ID and customer ID
+    public String findOrderStatus(int orderId, int customerId) {
+        String query = "SELECT status FROM \"SWproject\".orders WHERE order_id = ? AND customer_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, orderId);
+            stmt.setInt(2, customerId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("status");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database error finding order status: " + e.getMessage());
+        }
+
+        return null;
+    }
+
+    // US2.4: Update order status for a customer
+    public boolean updateOrderStatus(int orderId, int customerId, String newStatus) {
+        String query = "UPDATE \"SWproject\".orders SET status = ? WHERE order_id = ? AND customer_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, orderId);
+            stmt.setInt(3, customerId);
+
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("Database error updating order status: " + e.getMessage());
+        }
+
+        return false;
+    }
+
     // US3.3: Read status by order ID
     public String findOrderStatusById(int orderId) {
         String query = "SELECT status FROM \"SWproject\".orders WHERE order_id = ?";
@@ -210,7 +215,7 @@ public class OrderRepository {
         return null;
     }
 
-    // US3.3/US3.4: Status update by order ID
+    // US3.3/US3.4 & US4.1: Status update by order ID with old status check
     public boolean updateOrderStatusById(int orderId, String expectedOldStatus, String newStatus) {
         String query = "UPDATE \"SWproject\".orders SET status = ? "
                 + "WHERE order_id = ? AND status = ?";
@@ -228,10 +233,6 @@ public class OrderRepository {
         }
     }
 
-    // ---------------------------------------------------------
-    // NEW METHODS FOR UX IMPROVEMENTS (Displaying Orders Lists)
-    // ---------------------------------------------------------
-
     // For Manager: Fetch pending orders that need a driver
     public List<Order> findPendingOrders() {
         return fetchOrdersWithQuery(
@@ -239,7 +240,7 @@ public class OrderRepository {
         );
     }
 
-    // For Manager: Fetch all active orders (not delivered and not cancelled)
+    // For Manager: Fetch all active orders
     public List<Order> findActiveOrdersForManager() {
         return fetchOrdersWithQuery(
             "SELECT * FROM \"SWproject\".orders WHERE status NOT IN ('DELIVERED', 'CANCELLED') ORDER BY order_id"
@@ -269,7 +270,7 @@ public class OrderRepository {
                         rs.getString("status"),
                         rs.getString("delivery_address"),
                         rs.getDouble("total"),
-                        new ArrayList<>() // Empty items list for summary display
+                        new ArrayList<>()
                 ));
             }
         } catch (SQLException e) {
