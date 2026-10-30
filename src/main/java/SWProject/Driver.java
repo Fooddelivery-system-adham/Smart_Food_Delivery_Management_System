@@ -1,6 +1,6 @@
 package SWProject;
 
-public class Driver {
+public abstract class Driver {
     private final int driverId;
     private final String name;
     private final String driverType;
@@ -32,4 +32,6 @@ public class Driver {
     public boolean isAvailable() {
         return "AVAILABLE".equalsIgnoreCase(status);
     }
+
+    public abstract boolean canDeliver(double distanceKm);
 }

@@ -19,10 +19,17 @@ public class Main {
         OrderRepository orderRepository = new OrderRepository();
         OrderService orderService = new OrderService(orderRepository, menuItemRepository, restaurantRepository);
 
-        // Sprint 3 & 4 setup
         DriverRepository driverRepository = new DriverRepository();
+        
+        // Payment Repository & Service (US4.4)
+        PaymentRepository paymentRepository = new PaymentRepository();
+        PaymentService paymentService = new PaymentService(paymentRepository);
+
+        // Notifications setup with Observer pattern & Customer Inbox
         NotificationService notificationService = new NotificationService();
+        CustomerInboxNotifier inboxNotifier = new CustomerInboxNotifier();
         notificationService.addObserver(new CustomerConsoleNotifier());
+        notificationService.addObserver(inboxNotifier);
 
         DeliveryService deliveryService = new DeliveryService(
                 driverRepository,
@@ -38,7 +45,7 @@ public class Main {
 
         try (Scanner scanner = new Scanner(System.in)) {
             while (true) {
-                System.out.println("\n=== Food Delivery System ===");
+                System.out.println("\n=== Smart Food Delivery System ===");
                 System.out.println("1. Log in");
                 System.out.println("0. Exit");
                 System.out.print("Choice: ");
@@ -51,7 +58,8 @@ public class Main {
 
                 if ("1".equals(choice)) {
                     login(scanner, authService, restaurantService, menuItemService,
-                          orderService, deliveryService, notificationService, orderStatusService);
+                          orderService, deliveryService, notificationService, 
+                          orderStatusService, paymentService, inboxNotifier);
                 } else {
                     System.out.println("Invalid choice. Please enter 1 or 0.");
                 }
@@ -64,7 +72,9 @@ public class Main {
                               RestaurantService restaurants, MenuItemService menu,
                               OrderService orderService, DeliveryService deliveryService,
                               NotificationService notificationService,
-                              OrderStatusService orderStatusService) {
+                              OrderStatusService orderStatusService,
+                              PaymentService paymentService,
+                              CustomerInboxNotifier inboxNotifier) {
         System.out.print("Username or Email: ");
         String id = scanner.nextLine();
         System.out.print("Password: ");
@@ -78,7 +88,7 @@ public class Main {
         System.out.println("\nLogin Successful! Welcome " + user.getUsername());
 
         if (user.isCustomer()) {
-            customerMenu(scanner, user, restaurants, menu, orderService, notificationService);
+            customerMenu(scanner, user, restaurants, menu, orderService, notificationService, paymentService, inboxNotifier);
         } else if (user.isManager()) {
             managerMenu(scanner, restaurants, menu, deliveryService, orderStatusService, orderService);
         } else {
@@ -89,15 +99,18 @@ public class Main {
     // ================= CUSTOMER MENU =================
     private static void customerMenu(Scanner scanner, User user, RestaurantService restaurants,
                                      MenuItemService menu, OrderService orderService,
-                                     NotificationService notificationService) {
+                                     NotificationService notificationService,
+                                     PaymentService paymentService,
+                                     CustomerInboxNotifier inboxNotifier) {
         while (true) {
             System.out.println("\n=== CUSTOMER MENU ===");
             System.out.println("1. View Available Restaurants");
             System.out.println("2. Track My Active Orders");
+            System.out.println("3. Notifications Inbox (Order Tracking)");
 
             boolean hasPending = orderService.hasPendingOrder(user.getUserId());
             if (hasPending) {
-                System.out.println("3. Cancel a Pending Order");
+                System.out.println("4. Cancel a Pending Order");
             }
 
             System.out.println("0. Log out");
@@ -110,7 +123,7 @@ public class Main {
             }
 
             if (choice == 1) {
-                showAvailableRestaurants(scanner, user, restaurants, menu, orderService, notificationService);
+                showAvailableRestaurants(scanner, user, restaurants, menu, orderService, notificationService, paymentService);
             } else if (choice == 2) {
                 List<Order> myOrders = orderService.getActiveOrdersByCustomer(user.getUserId());
                 if (myOrders.isEmpty()) {
@@ -125,6 +138,26 @@ public class Main {
                     }
                 }
             } else if (choice == 3) {
+                List<Order> myOrders = orderService.getActiveOrdersByCustomer(user.getUserId());
+                System.out.println("\n=== 📩 NOTIFICATIONS INBOX ===");
+                if (myOrders.isEmpty()) {
+                    System.out.println("You do not have any active orders to track.");
+                } else {
+                    for (Order o : myOrders) {
+                        System.out.println("\n----------------------------------");
+                        System.out.println("📌 Tracking Updates for Order #" + o.getOrderId() + " [" + o.getStatus() + "]:");
+                        List<String> logs = inboxNotifier.getNotificationsForOrder(o.getOrderId());
+                        if (logs.isEmpty()) {
+                            System.out.println("   (No notification logs recorded yet)");
+                        } else {
+                            for (String log : logs) {
+                                System.out.println("   " + log);
+                            }
+                        }
+                    }
+                    System.out.println("----------------------------------");
+                }
+            } else if (choice == 4) {
                 if (!hasPending) {
                     System.out.println("No pending orders available to cancel.");
                     continue;
@@ -138,7 +171,8 @@ public class Main {
 
     private static void showAvailableRestaurants(Scanner scanner, User user, RestaurantService restaurants,
                                                   MenuItemService menu, OrderService orderService,
-                                                  NotificationService notificationService) {
+                                                  NotificationService notificationService,
+                                                  PaymentService paymentService) {
         while (true) {
             List<Restaurant> list = restaurants.getOpenRestaurants();
             System.out.println("\n=== AVAILABLE RESTAURANTS ===");
@@ -169,220 +203,267 @@ public class Main {
             }
 
             Restaurant selectedRestaurant = list.get(choice - 1);
-            handleCustomerOrdering(scanner, user, selectedRestaurant, menu, orderService, notificationService);
+            handleCustomerOrdering(scanner, user, selectedRestaurant, menu, orderService, notificationService, paymentService);
         }
     }
 
     private static void handleCustomerOrdering(Scanner scanner, User user, Restaurant r,
-                                               MenuItemService menu, OrderService orderService,
-                                               NotificationService notificationService) {
-        List<OrderService.CartItem> cart = new ArrayList<>();
+            MenuItemService menu, OrderService orderService,
+            NotificationService notificationService,
+            PaymentService paymentService) {
+List<OrderService.CartItem> cart = new ArrayList<>();
 
-        while (true) {
-            List<MenuItem> items = menu.getAvailableMenuItems(r.getRestaurantId());
-            System.out.println("\n=== " + r.getName() + " MENU ===");
-            System.out.println("Min Order Value: $" + r.getMinOrderValue()
-                    + " | Max Radius: " + r.getMaxDeliveryRadiusKm() + " km");
+while (true) {
+List<MenuItem> items = menu.getAvailableMenuItems(r.getRestaurantId());
+System.out.println("\n=== " + r.getName() + " MENU ===");
+System.out.println("Min Order Value: $" + r.getMinOrderValue()
++ " | Max Radius: " + r.getMaxDeliveryRadiusKm() + " km");
 
-            if (items.isEmpty()) {
-                System.out.println("No available menu items.");
-                return;
-            } else {
-                for (MenuItem item : items) {
-                    System.out.println("[" + item.getItemId() + "] " + item.getName()
-                            + " - $" + item.getPrice());
-                }
-            }
+if (items.isEmpty()) {
+System.out.println("No available menu items.");
+return;
+} else {
+for (MenuItem item : items) {
+System.out.println("[" + item.getItemId() + "] " + item.getName()
++ " - $" + item.getPrice());
+}
+}
 
-            if (!cart.isEmpty()) {
-                System.out.println("\nYour Current Cart (" + cart.size() + " item/s):");
-                for (OrderService.CartItem c : cart) {
-                    System.out.println("   - Item ID: " + c.getItemId() + " | Qty: " + c.getQuantity());
-                }
-            }
+if (!cart.isEmpty()) {
+System.out.println("\nYour Current Cart (" + cart.size() + " item/s):");
+for (OrderService.CartItem c : cart) {
+System.out.println("   - Item ID: " + c.getItemId() + " | Qty: " + c.getQuantity());
+}
+}
 
-            System.out.println("\nOptions:");
-            System.out.println("1. Add item to cart");
-            System.out.println("2. Checkout & Place Order");
-            System.out.println("3. Clear Cart");
-            System.out.println("0. Cancel & Back");
-            System.out.print("Choice: ");
+System.out.println("\nOptions:");
+System.out.println("1. Add item to cart");
+System.out.println("2. Checkout & Place Order");
+System.out.println("3. Clear Cart");
+System.out.println("0. Cancel & Back");
+System.out.print("Choice: ");
 
-            int choice = readInt(scanner);
-            if (choice == 0) {
-                return;
-            }
+int choice = readInt(scanner);
+if (choice == 0) {
+return;
+}
 
-            if (choice == 1) {
-                System.out.print("Enter Item ID: ");
-                int itemId = readInt(scanner);
+if (choice == 1) {
+System.out.print("Enter Item ID: ");
+int itemId = readInt(scanner);
 
-                boolean exists = items.stream().anyMatch(i -> i.getItemId() == itemId);
-                if (!exists) {
-                    System.out.println("Invalid Item ID! Please select an ID from the menu above.");
-                    continue;
-                }
+boolean exists = items.stream().anyMatch(i -> i.getItemId() == itemId);
+if (!exists) {
+System.out.println("Invalid Item ID! Please select an ID from the menu above.");
+continue;
+}
 
-                System.out.print("Enter Quantity: ");
-                int qty = readInt(scanner);
+System.out.print("Enter Quantity: ");
+int qty = readInt(scanner);
 
-                if (qty <= 0) {
-                    System.out.println("Invalid quantity! Quantity must be 1 or more.");
-                    continue;
-                }
+if (qty <= 0) {
+System.out.println("Invalid quantity! Quantity must be 1 or more.");
+continue;
+}
 
-                cart.add(new OrderService.CartItem(itemId, qty));
-                System.out.println("Item added to cart!");
+cart.add(new OrderService.CartItem(itemId, qty));
+System.out.println("Item added to cart!");
 
-            } else if (choice == 2) {
-                if (cart.isEmpty()) {
-                    System.out.println("Cart is empty! Add items first.");
-                    continue;
-                }
+} else if (choice == 2) {
+if (cart.isEmpty()) {
+System.out.println("Cart is empty! Add items first.");
+continue;
+}
 
-                // Palestinian Cities Address Validation
-                String[] palestinianCities = {
-                    "ramallah", "nablus", "hebron", "jenin", "jerusalem",
-                    "bethlehem", "tulkarm", "qalqilya", "jericho", "gaza",
-                    "tubas", "salfit"
-                };
+// Palestinian Cities Address Validation
+String[] palestinianCities = {
+"ramallah", "nablus", "hebron", "jenin", "jerusalem",
+"bethlehem", "tulkarm", "qalqilya", "jericho", "gaza",
+"tubas", "salfit"
+};
 
-                String address = "";
-                boolean validAddress = false;
+String address = "";
+boolean validAddress = false;
 
-                while (!validAddress) {
-                    System.out.print("Enter Delivery Address (must start with a Palestinian city, e.g. Nablus, Ramallah): ");
-                    address = scanner.nextLine().trim();
+while (!validAddress) {
+System.out.print("Enter Delivery Address (must start with a Palestinian city, e.g. Nablus, Ramallah): ");
+address = scanner.nextLine().trim();
 
-                    String lowerAddress = address.toLowerCase();
-                    for (String city : palestinianCities) {
-                        if (lowerAddress.startsWith(city)) {
-                            validAddress = true;
-                            break;
-                        }
-                    }
+String lowerAddress = address.toLowerCase();
+for (String city : palestinianCities) {
+if (lowerAddress.startsWith(city)) {
+validAddress = true;
+break;
+}
+}
 
-                    if (!validAddress) {
-                        System.out.println("ERROR: We only deliver inside Palestine. Please start your address with a valid Palestinian city name.");
-                    }
-                }
+if (!validAddress) {
+System.out.println("ERROR: We only deliver inside Palestine. Please start your address with a valid Palestinian city name.");
+}
+}
 
-                System.out.print("Enter Delivery Distance in km: ");
-                double distance;
-                try {
-                    distance = Double.parseDouble(scanner.nextLine().trim());
-                } catch (NumberFormatException e) {
-                    System.out.println("Invalid distance entered. Please enter a number.");
-                    continue;
-                }
+// Auto distance calculation display via GPS coordinates
+double calculatedDistance = GeoUtils.calculateDistanceKm(
+user.getLatitude(), user.getLongitude(),
+r.getLatitude(), r.getLongitude()
+);
+calculatedDistance = Math.round(calculatedDistance * 100.0) / 100.0;
+System.out.println("📍 Automatically calculated delivery distance via GPS: " + calculatedDistance + " km");
 
-                // US4.3: Dynamic Pricing Selection based on Manager Configuration
-                System.out.println("\nSelect Pricing Strategy:");
+// US4.3: Dynamic Pricing Selection based on Manager Configuration
+System.out.println("\nSelect Pricing Strategy:");
 
-                if (PricingConfig.isPeakHourEnabled()) {
-                    System.out.println("1. Peak-Hour Pricing (+20% on food)   [AVAILABLE]");
-                    System.out.println("2. Normal Pricing                    [Not available now]");
-                    System.out.println("3. Express Delivery Pricing (+$7)    [Not available now]");
-                    System.out.println("4. Promotional Pricing (10% off)     [Not available now]");
-                    System.out.print("Choice: ");
+if (PricingConfig.isPeakHourEnabled()) {
+System.out.println("1. Peak-Hour Pricing (+20% on food)   [AVAILABLE]");
+System.out.println("2. Normal Pricing                    [Not available now]");
+System.out.println("3. Express Delivery Pricing (+$7)    [Not available now]");
+System.out.println("4. Promotional Pricing (10% off)     [Not available now]");
+System.out.print("Choice: ");
 
-                    int pricingChoice = readInt(scanner);
-                    if (pricingChoice != 1) {
-                        System.out.println("Only Peak-Hour pricing is active right now (Manager enabled Peak-Hour mode).");
-                    }
-                    orderService.setPricingStrategy(new PeakHourPricingStrategy());
-                    System.out.println("Applied: Peak-Hour Pricing Strategy.");
+int pricingChoice = readInt(scanner);
+if (pricingChoice != 1) {
+System.out.println("Only Peak-Hour pricing is active right now (Manager enabled Peak-Hour mode).");
+}
+orderService.setPricingStrategy(new PeakHourPricingStrategy());
+System.out.println("Applied: Peak-Hour Pricing Strategy.");
 
-                } else if (PricingConfig.isPromotionalEnabled()) {
-                    System.out.println("1. Normal Pricing                    [AVAILABLE]");
-                    System.out.println("2. Express Delivery Pricing (+$7)    [AVAILABLE]");
-                    System.out.println("3. Promotional Pricing (10% off)     [AVAILABLE]");
-                    System.out.println("4. Peak-Hour Pricing (+20% on food)  [Not available now]");
-                    System.out.print("Choice: ");
+} else if (PricingConfig.isPromotionalEnabled()) {
+System.out.println("1. Normal Pricing                    [AVAILABLE]");
+System.out.println("2. Express Delivery Pricing (+$7)    [AVAILABLE]");
+System.out.println("3. Promotional Pricing (10% off)     [AVAILABLE]");
+System.out.println("4. Peak-Hour Pricing (+20% on food)  [Not available now]");
+System.out.print("Choice: ");
 
-                    int pricingChoice = readInt(scanner);
-                    if (pricingChoice == 2) {
-                        orderService.setPricingStrategy(new ExpressDeliveryPricingStrategy());
-                        System.out.println("Applied: Express Delivery Pricing Strategy.");
-                    } else if (pricingChoice == 3) {
-                        orderService.setPricingStrategy(new PromotionalPricingStrategy());
-                        System.out.println("Applied: Promotional Pricing Strategy.");
-                    } else if (pricingChoice == 4) {
-                        System.out.println("Peak-Hour mode is currently disabled by Manager.");
-                        orderService.setPricingStrategy(new NormalPricingStrategy());
-                        System.out.println("Applied: Normal Pricing Strategy.");
-                    } else {
-                        orderService.setPricingStrategy(new NormalPricingStrategy());
-                        System.out.println("Applied: Normal Pricing Strategy.");
-                    }
+int pricingChoice = readInt(scanner);
+if (pricingChoice == 2) {
+orderService.setPricingStrategy(new ExpressDeliveryPricingStrategy());
+System.out.println("Applied: Express Delivery Pricing Strategy.");
+} else if (pricingChoice == 3) {
+orderService.setPricingStrategy(new PromotionalPricingStrategy());
+System.out.println("Applied: Promotional Pricing Strategy.");
+} else if (pricingChoice == 4) {
+System.out.println("Peak-Hour mode is currently disabled by Manager.");
+orderService.setPricingStrategy(new NormalPricingStrategy());
+System.out.println("Applied: Normal Pricing Strategy.");
+} else {
+orderService.setPricingStrategy(new NormalPricingStrategy());
+System.out.println("Applied: Normal Pricing Strategy.");
+}
 
-                } else {
-                    System.out.println("1. Normal Pricing                    [AVAILABLE]");
-                    System.out.println("2. Express Delivery Pricing (+$7)    [AVAILABLE]");
-                    System.out.println("3. Peak-Hour Pricing (+20% on food)  [Not available now]");
-                    System.out.println("4. Promotional Pricing (10% off)     [Not available now]");
-                    System.out.print("Choice: ");
+} else {
+System.out.println("1. Normal Pricing                    [AVAILABLE]");
+System.out.println("2. Express Delivery Pricing (+$7)    [AVAILABLE]");
+System.out.println("3. Peak-Hour Pricing (+20% on food)  [Not available now]");
+System.out.println("4. Promotional Pricing (10% off)     [Not available now]");
+System.out.print("Choice: ");
 
-                    int pricingChoice = readInt(scanner);
-                    if (pricingChoice == 2) {
-                        orderService.setPricingStrategy(new ExpressDeliveryPricingStrategy());
-                        System.out.println("Applied: Express Delivery Pricing Strategy.");
-                    } else if (pricingChoice == 3 || pricingChoice == 4) {
-                        System.out.println("This pricing option is not active now. Ask Manager to enable it.");
-                        orderService.setPricingStrategy(new NormalPricingStrategy());
-                        System.out.println("Applied: Normal Pricing Strategy.");
-                    } else {
-                        orderService.setPricingStrategy(new NormalPricingStrategy());
-                        System.out.println("Applied: Normal Pricing Strategy.");
-                    }
-                }
+int pricingChoice = readInt(scanner);
+if (pricingChoice == 2) {
+orderService.setPricingStrategy(new ExpressDeliveryPricingStrategy());
+System.out.println("Applied: Express Delivery Pricing Strategy.");
+} else if (pricingChoice == 3 || pricingChoice == 4) {
+System.out.println("This pricing option is not active now. Ask Manager to enable it.");
+orderService.setPricingStrategy(new NormalPricingStrategy());
+System.out.println("Applied: Normal Pricing Strategy.");
+} else {
+orderService.setPricingStrategy(new NormalPricingStrategy());
+System.out.println("Applied: Normal Pricing Strategy.");
+}
+}
 
-                // Place the order
-                Order order = orderService.placeOrder(
-                        user.getUserId(),
-                        r.getRestaurantId(),
-                        address,
-                        distance,
-                        cart
-                );
+// US5.1 & US5.2: Select Order Type
+System.out.println("\nSelect Order Type :");
+System.out.println("1. STANDARD  (Normal delivery policy)");
+System.out.println("2. EXPRESS   (Priority delivery with +$5 extra urgency fee)");
+System.out.println("3. SCHEDULED (Select a future delivery time)");
+System.out.print("Choice: ");
 
-                if (order != null) {
-                    // Detailed Receipt Output for US4.2 & US4.3
-                    System.out.println("\n==========================================");
-                    System.out.println("🎉 ORDER PLACED SUCCESSFULLY!");
-                    System.out.println("Order ID:     #" + order.getOrderId());
-                    System.out.println("Status:       " + order.getStatus());
-                    System.out.println("Address:      " + order.getDeliveryAddress());
-                    System.out.println("Distance:     " + order.getDeliveryDistanceKm() + " km");
-                    System.out.println("------------------------------------------");
-                    System.out.println("Food Subtotal: $" + order.getSubtotal());
-                    System.out.println("Delivery Fee:  $" + order.getDeliveryFee());
-                    System.out.println("Discount:      -$" + order.getDiscountAmount());
-                    System.out.println("------------------------------------------");
-                    System.out.println("FINAL TOTAL:   $" + order.getTotal());
-                    System.out.println("==========================================");
+int orderTypeChoice = readInt(scanner);
+String orderType = "STANDARD";
+String scheduledTime = "ASAP";
 
-                    notificationService.notifyStatusChange(
-                            order.getOrderId(),
-                            "NONE",
-                            "PENDING",
-                            "Your order has been placed and is waiting for confirmation."
-                    );
+if (orderTypeChoice == 2) {
+orderType = "EXPRESS";
+} else if (orderTypeChoice == 3) {
+orderType = "SCHEDULED";
+System.out.print("Enter requested future delivery time (e.g. 18:30 or 2026-10-15 19:00): ");
+scheduledTime = scanner.nextLine().trim();
+if (scheduledTime.isEmpty()) {
+System.out.println("No time entered. Defaulting to ASAP.");
+scheduledTime = "ASAP";
+}
+}
 
-                    return;
-                } else {
-                    System.out.println("Checkout failed due to delivery policy violation.");
-                }
+// Place the polymorphic order using User's GPS and selected order type
+Order order = orderService.placeOrder(
+user,
+r.getRestaurantId(),
+address,
+cart,
+orderType,
+scheduledTime
+);
 
-            } else if (choice == 3) {
-                cart.clear();
-                System.out.println("Cart cleared successfully!");
-            } else {
-                System.out.println("Invalid option.");
-            }
-        }
-    }
+if (order != null) {
+// Detailed Receipt Output for US4.2, US4.3, US5.1, US5.2
+System.out.println("\n==========================================");
+System.out.println("💳 ORDER CREATED! PROCEED TO PAYMENT");
+System.out.println("Order ID:     #" + order.getOrderId());
+System.out.println("Order Type:   " + order.getOrderType());
+System.out.println("Status:       " + order.getStatus());
+System.out.println("Address:      " + order.getDeliveryAddress());
+System.out.println("Distance:     " + order.getDeliveryDistanceKm() + " km");
+System.out.println("Deliver At:   " + order.getScheduledTime());
+System.out.println("------------------------------------------");
+System.out.println("Food Subtotal: $" + order.getSubtotal());
+System.out.println("Delivery Fee:  $" + order.getDeliveryFee());
+System.out.println("Discount:      -$" + order.getDiscountAmount());
+System.out.println("------------------------------------------");
+System.out.println("TOTAL DUE:     $" + order.getTotal());
+System.out.println("==========================================");
 
+// US4.4 Payment Processing
+boolean paid = false;
+while (!paid) {
+System.out.println("\n--- PROCESS PAYMENT  ---");
+System.out.println("Method: CASH ONLINE");
+System.out.print("Enter Cash Amount Provided by Customer: $");
+double cashProvided = 0;
+try {
+cashProvided = Double.parseDouble(scanner.nextLine().trim());
+} catch (NumberFormatException e) {
+System.out.println("Invalid number format.");
+continue;
+}
+
+paid = paymentService.processCashPayment(order.getOrderId(), order.getTotal(), cashProvided);
+
+// Send confirmation email with invoice AFTER payment succeeds
+if (paid) {
+orderService.sendOrderInvoiceEmail(user, order);
+}
+}
+
+notificationService.notifyStatusChange(
+order.getOrderId(),
+"NONE",
+"PENDING",
+"Your " + order.getOrderType() + " order has been placed and is waiting for confirmation."
+);
+
+return;
+} else {
+System.out.println("Checkout failed due to delivery policy violation.");
+}
+
+} else if (choice == 3) {
+cart.clear();
+System.out.println("Cart cleared successfully!");
+} else {
+System.out.println("Invalid option.");
+}
+}
+}
     // ================= US2.4 - CANCEL ORDER =================
     private static void handleCancelOrder(Scanner scanner, User user, OrderService orderService,
                                           NotificationService notificationService) {
@@ -430,6 +511,7 @@ public class Main {
             System.out.println("4. Assign Driver to Order (Smart Selection)");
             System.out.println("5. Change Order Status (Lifecycle Transitions)");
             System.out.println("6. Configure Pricing Mode (Peak / Promo)");
+            System.out.println("7. View Drivers Status & Fleet Monitor"); // 🆕 New option
             System.out.println("0. Log out");
             System.out.print("Choice: ");
 
@@ -453,12 +535,57 @@ public class Main {
                 case "6":
                     handlePricingConfig(scanner);
                     break;
+                case "7":
+                    handleViewDrivers(deliveryService); // 🆕 Call the new screen
+                    break;
                 case "0":
                     return;
                 default:
                     System.out.println("Invalid choice.");
             }
         }
+    }
+
+    // 🆕 Function to print the drivers fleet monitor screen for the manager
+    private static void handleViewDrivers(DeliveryService deliveryService) {
+        System.out.println("\n--- 🚚 Drivers Fleet Status Monitor ---");
+        List<Driver> drivers = deliveryService.getAllDriversStatus();
+
+        if (drivers == null || drivers.isEmpty()) {
+            System.out.println("No drivers found in the system.");
+            return;
+        }
+
+        System.out.printf("%-5s | %-18s | %-18s | %-15s | %-25s%n", 
+                          "ID", "Name", "Vehicle Type", "Status", "GPS Location (Lat, Lon)");
+        System.out.println("----------------------------------------------------------------------------------------------------");
+
+        for (Driver d : drivers) {
+            // Determine icon and status text
+            String statusDisplay;
+            if ("AVAILABLE".equalsIgnoreCase(d.getStatus())) {
+                statusDisplay = "🟢 AVAILABLE";
+            } else if ("BUSY".equalsIgnoreCase(d.getStatus())) {
+                statusDisplay = "🔴 BUSY";
+            } else {
+                statusDisplay = "⚪ " + d.getStatus().toUpperCase();
+            }
+
+            // Determine vehicle type from the class name (Polymorphic Class Name)
+            String vehicleType = d.getClass().getSimpleName().replace("Driver", "");
+            if (vehicleType.isEmpty()) {
+                vehicleType = "Standard";
+            }
+
+            System.out.printf("%-5d | %-18s | %-18s | %-15s | (Lat: %.4f, Lon: %.4f)%n",
+                    d.getDriverId(),
+                    d.getName(),
+                    vehicleType,
+                    statusDisplay,
+                    d.getLatitude(),
+                    d.getLongitude());
+        }
+        System.out.println("----------------------------------------------------------------------------------------------------");
     }
 
     // ================= MANAGER PRICING CONTROL =================

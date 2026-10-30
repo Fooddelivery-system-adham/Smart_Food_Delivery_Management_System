@@ -5,6 +5,11 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Service handling lifecycle status transitions for orders and sending status notifications.
+ *
+ * @author Smart Food Delivery Team
+ */
 public class OrderStatusService {
 
     public enum StatusChangeResult {
@@ -19,11 +24,23 @@ public class OrderStatusService {
 
     private final OrderRepository orderRepository;
     private final NotificationService notificationService;
+    private final EmailService emailService;
     private final Map<String, Set<String>> allowedTransitions = new HashMap<>();
 
+    /**
+     * Standard constructor using default EmailService instance.
+     */
     public OrderStatusService(OrderRepository orderRepository, NotificationService notificationService) {
+        this(orderRepository, notificationService, new EmailService());
+    }
+
+    /**
+     * Overloaded constructor for dependency injection (useful for Mockito testing).
+     */
+    public OrderStatusService(OrderRepository orderRepository, NotificationService notificationService, EmailService emailService) {
         this.orderRepository = orderRepository;
         this.notificationService = notificationService;
+        this.emailService = (emailService != null) ? emailService : new EmailService();
         initTransitions();
     }
 
@@ -77,6 +94,14 @@ public class OrderStatusService {
         if (!updated) {
             return StatusChangeResult.DATABASE_ERROR;
         }
+
+        // 📧 1. إرسال إيميل الاستلام النهائي إذا أصبحت الحالة DELIVERED
+        if ("DELIVERED".equalsIgnoreCase(cleanStatus)) {
+            String customerEmail = orderRepository.findCustomerEmailByOrderId(orderId);
+            if (customerEmail != null && !customerEmail.trim().isEmpty()) {
+                emailService.sendOrderCompletedEmail(customerEmail, orderId);
+            }
+        } // ⬅️ أصلحنا القوس المفقود هنا
 
         // US3.3/US3.4: notify on every successful status change
         notificationService.notifyStatusChange(

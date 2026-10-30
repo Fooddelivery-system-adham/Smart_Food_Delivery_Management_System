@@ -19,6 +19,10 @@ public class DeliveryService {
         this.notificationService = notificationService;
         this.assignmentStrategy = defaultStrategy;
     }
+    // Add this method inside DeliveryService.java
+    public List<Driver> getAllDriversStatus() {
+        return driverRepository.getAllDrivers();
+    }
 
     public void setStrategy(DriverAssignmentStrategy strategy) {
         if (strategy != null) {

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -54,7 +55,7 @@ class DomainModelTest {
     }
 
     @Test
-    @DisplayName("Order and OrderItem getters and setters")
+    @DisplayName("Order model getters, setters and polymorphism")
     void orderModel_testGettersAndSetters() {
         OrderItem item = new OrderItem(1, "Whopper", 2, 25.0);
         assertEquals(1, item.getItemId());
@@ -63,7 +64,15 @@ class DomainModelTest {
         assertEquals(25.0, item.getUnitPrice(), 0.001);
         assertEquals(50.0, item.getSubtotal(), 0.001);
 
-        Order order = new Order(100, 1, 2, "STANDARD", "PENDING", "Nablus", 5.0, 50.0, 10.5, 0.0, 60.5, new ArrayList<>());
+        List<OrderItem> items = new ArrayList<>();
+        items.add(item);
+        // Use StandardOrder (concrete subclass) instead of abstract Order
+        Order order = new StandardOrder(
+                100, 1, 2, "PENDING", "Nablus", 5.0,
+                50.0, 10.5, 0.0, 60.5, items
+        );
+        order.applyTypeRules();
+
         order.setOrderId(200);
         order.setDriverId(5);
         order.setStatus("CONFIRMED");
@@ -79,14 +88,32 @@ class DomainModelTest {
         assertEquals(50.0, order.getSubtotal(), 0.001);
         assertEquals(10.5, order.getDeliveryFee(), 0.001);
         assertEquals(0.0, order.getDiscountAmount(), 0.001);
-        assertEquals(60.5, order.getTotal(), 0.001);
+        assertEquals(60.5, order.getTotal(), 0.001); // no extra fee for STANDARD
         assertNotNull(order.getItems());
+
+        // Extra polymorphism checks (US5.1 / US5.2)
+        ExpressOrder express = new ExpressOrder(
+                101, 1, 2, "PENDING", "Ramallah", 3.0,
+                40.0, 5.0, 0.0, 45.0, items
+        );
+        express.applyTypeRules();
+        assertEquals("EXPRESS", express.getOrderType());
+        assertEquals(50.0, express.getTotal(), 0.001); // 45 + 5 express fee
+
+        ScheduledOrder scheduled = new ScheduledOrder(
+                102, 1, 2, "PENDING", "Hebron", 4.0,
+                30.0, 6.0, 0.0, 36.0, items, "18:30"
+        );
+        scheduled.applyTypeRules();
+        assertEquals("SCHEDULED", scheduled.getOrderType());
+        assertEquals("18:30", scheduled.getScheduledTime());
+        assertEquals(36.0, scheduled.getTotal(), 0.001); // no extra fee
     }
 
     @Test
-    @DisplayName("Driver model getters and setters")
+    @DisplayName("Driver model getters, setters and polymorphism rules")
     void driverModel_testGettersAndSetters() {
-        Driver driver = new Driver(1, "Sami", "MOTORCYCLE", "AVAILABLE", 32.22, 35.25, 40.0);
+        Driver driver = new MotorcycleDriver(1, "Sami", "AVAILABLE", 32.22, 35.25, 40.0);
         driver.setStatus("BUSY");
 
         assertEquals(1, driver.getDriverId());
@@ -97,5 +124,8 @@ class DomainModelTest {
         assertEquals(35.25, driver.getLongitude(), 0.001);
         assertEquals(40.0, driver.getAverageSpeedKmh(), 0.001);
         assertFalse(driver.isAvailable());
+
+        assertTrue(driver.canDeliver(10.0)); 
+        assertFalse(driver.canDeliver(20.0));
     }
 }

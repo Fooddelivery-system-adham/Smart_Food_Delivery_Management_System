@@ -16,6 +16,7 @@ class OrderServiceTest {
     private FakeOrderRepository fakeOrderRepository;
     private FakeMenuItemRepository fakeMenuItemRepository;
     private FakeRestaurantRepository fakeRestaurantRepository;
+    private User validCustomer;
 
     private static class FakeOrderRepository extends OrderRepository {
         @Override
@@ -54,7 +55,8 @@ class OrderServiceTest {
     private static class FakeRestaurantRepository extends RestaurantRepository {
         @Override
         public Restaurant findById(int restaurantId) {
-            return new Restaurant(restaurantId, "Burger King", "OPEN", 15.0, 10.0);
+            // Restaurant located at coordinates (32.250000, 35.250000)
+            return new Restaurant(restaurantId, "Burger King", "OPEN", 15.0, 10.0, 32.250000, 35.250000);
         }
     }
 
@@ -64,29 +66,33 @@ class OrderServiceTest {
         fakeMenuItemRepository = new FakeMenuItemRepository();
         fakeRestaurantRepository = new FakeRestaurantRepository();
         orderService = new OrderService(fakeOrderRepository, fakeMenuItemRepository, fakeRestaurantRepository);
+
+        // Customer located at coordinates (32.220000, 35.250000) -> ~3.3 km away from restaurant
+        validCustomer = new User(1, "ahmad", "ahmad@mail.com", "pass123", "CUSTOMER", 32.220000, 35.250000);
     }
 
     @Test
-    @DisplayName("US2.1 & US2.3: Valid order is placed successfully")
+    @DisplayName("US2.1 & US2.3: Valid order is placed successfully using User GPS")
     void placeOrder_validInputs_returnsNewOrder() {
         // Arrange
         List<OrderService.CartItem> cart = new ArrayList<>();
         cart.add(new OrderService.CartItem(1, 2));
 
         // Act
-        Order order = orderService.placeOrder(1, 1, "Nablus Main St", 5.0, cart);
+        Order order = orderService.placeOrder(validCustomer, 1, "Nablus Main St", cart);
 
         // Assert
         assertNotNull(order);
         assertEquals(50.0, order.getSubtotal(), 0.001);
         assertEquals("PENDING", order.getStatus());
+        assertTrue(order.getDeliveryDistanceKm() > 0);
     }
 
     @Test
     @DisplayName("US2.2: Reject order with empty cart")
     void placeOrder_emptyCart_returnsNull() {
         // Act & Assert
-        assertNull(orderService.placeOrder(1, 1, "Nablus Main St", 5.0, Collections.emptyList()));
+        assertNull(orderService.placeOrder(validCustomer, 1, "Nablus Main St", Collections.emptyList()));
     }
 
     @Test
@@ -96,7 +102,18 @@ class OrderServiceTest {
         List<OrderService.CartItem> cart = Collections.singletonList(new OrderService.CartItem(1, 1));
 
         // Act & Assert
-        assertNull(orderService.placeOrder(1, 1, "abc", 5.0, cart));
+        assertNull(orderService.placeOrder(validCustomer, 1, "abc", cart));
+    }
+
+    @Test
+    @DisplayName("US2.3: Reject order if user is outside max delivery radius")
+    void placeOrder_outsideDeliveryRadius_returnsNull() {
+        // User placed very far away (~500 km)
+        User farCustomer = new User(2, "far_user", "far@mail.com", "pass123", "CUSTOMER", 35.000000, 35.250000);
+        List<OrderService.CartItem> cart = Collections.singletonList(new OrderService.CartItem(1, 1));
+
+        // Act & Assert
+        assertNull(orderService.placeOrder(farCustomer, 1, "Far City Address", cart));
     }
 
     @Test
