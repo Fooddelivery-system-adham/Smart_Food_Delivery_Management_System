@@ -6,7 +6,8 @@ import java.util.List;
 /**
  * Core business logic service responsible for managing food orders.
  * Handles order validation, GPS-based auto distance calculation, dynamic pricing strategies,
- * polymorphic order creation (Standard, Express, Scheduled), order cancellations, and order querying.
+ * polymorphic order creation (Standard, Express, Scheduled), order cancellations,
+ * order querying, and automatic customer email notifications.
  *
  * @author Adham
  * @author Ahmad
@@ -17,6 +18,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final MenuItemRepository menuItemRepository;
     private final RestaurantRepository restaurantRepository;
+    private final EmailService emailService;
     private PricingStrategy pricingStrategy = new NormalPricingStrategy();
 
     /**
@@ -41,6 +43,7 @@ public class OrderService {
 
     /**
      * Constructs an OrderService with required repository dependencies.
+     * Uses a default EmailService instance.
      *
      * @param orderRepository      the repository managing order persistence
      * @param menuItemRepository  the repository managing menu item persistence
@@ -48,9 +51,24 @@ public class OrderService {
      */
     public OrderService(OrderRepository orderRepository, MenuItemRepository menuItemRepository,
                         RestaurantRepository restaurantRepository) {
+        this(orderRepository, menuItemRepository, restaurantRepository, new EmailService());
+    }
+
+    /**
+     * Constructs an OrderService with repository dependencies and a custom EmailService.
+     * Useful for unit testing with Mockito mocks.
+     *
+     * @param orderRepository      the repository managing order persistence
+     * @param menuItemRepository  the repository managing menu item persistence
+     * @param restaurantRepository the repository managing restaurant persistence
+     * @param emailService         the email service used for customer notifications
+     */
+    public OrderService(OrderRepository orderRepository, MenuItemRepository menuItemRepository,
+                        RestaurantRepository restaurantRepository, EmailService emailService) {
         this.orderRepository = orderRepository;
         this.menuItemRepository = menuItemRepository;
         this.restaurantRepository = restaurantRepository;
+        this.emailService = (emailService != null) ? emailService : new EmailService();
     }
 
     /**
@@ -67,6 +85,7 @@ public class OrderService {
     /**
      * Places a new food delivery order with validations, GPS-based auto distance calculation,
      * dynamic pricing, and polymorphic order type rules (US2.1, US2.2, US2.3, US4.2, US4.3, US5.1, US5.2).
+     * On success, sends a confirmation email with invoice details to the customer's database email.
      *
      * @param customer        the user placing the order (contains latitude and longitude coordinates)
      * @param restaurantId    the ID of the selected restaurant
@@ -77,118 +96,129 @@ public class OrderService {
      * @return the saved {@link Order} object if successfully placed, or {@code null} if rejected
      */
     public Order placeOrder(User customer, int restaurantId, String deliveryAddress, 
-                            List<CartItem> cart, String orderType, String scheduledTime) {
+            List<CartItem> cart, String orderType, String scheduledTime) {
+       
+// US2.2: Reject empty orders
+if (cart == null || cart.isEmpty()) {
+System.out.println("Order Rejected: Cannot place an empty order.");
+return null;
+}
 
-        // US2.2: Reject empty orders
-        if (cart == null || cart.isEmpty()) {
-            System.out.println("Order Rejected: Cannot place an empty order.");
-            return null;
-        }
+// US2.3: Validate delivery address length
+if (deliveryAddress == null || deliveryAddress.trim().length() < 5) {
+System.out.println("Order Rejected: Invalid delivery address (must be at least 5 characters).");
+return null;
+}
 
-        // US2.3: Validate delivery address length
-        if (deliveryAddress == null || deliveryAddress.trim().length() < 5) {
-            System.out.println("Order Rejected: Invalid delivery address (must be at least 5 characters).");
-            return null;
-        }
+// Fetch restaurant
+Restaurant restaurant = restaurantRepository.findById(restaurantId);
+if (restaurant == null || !restaurant.isOpen()) {    
+System.out.println("Order Rejected: Restaurant is closed or does not exist.");
+return null;
+}
 
-        // Fetch restaurant
-        Restaurant restaurant = restaurantRepository.findById(restaurantId);
-        if (restaurant == null || !restaurant.isOpen()) {    
-            System.out.println("Order Rejected: Restaurant is closed or does not exist.");
-            return null;
-        }
+// GPS Auto-Distance Calculation
+double deliveryDistanceKm = GeoUtils.calculateDistanceKm(
+customer.getLatitude(), customer.getLongitude(),
+restaurant.getLatitude(), restaurant.getLongitude()
+);
+deliveryDistanceKm = Math.round(deliveryDistanceKm * 100.0) / 100.0;
 
-        // GPS Auto-Distance Calculation
-        double deliveryDistanceKm = GeoUtils.calculateDistanceKm(
-                customer.getLatitude(), customer.getLongitude(),
-                restaurant.getLatitude(), restaurant.getLongitude()
-        );
-        deliveryDistanceKm = Math.round(deliveryDistanceKm * 100.0) / 100.0;
+// US2.3: Reject if user is beyond the restaurant's maximum delivery radius
+if (deliveryDistanceKm > restaurant.getMaxDeliveryRadiusKm()) {
+System.out.println("Order Rejected: Restaurant is outside your delivery zone. (Max radius: "
+    + restaurant.getMaxDeliveryRadiusKm() + " km, Your distance: " + deliveryDistanceKm + " km)");
+return null;
+}
 
-        // US2.3: Reject if user is beyond the restaurant's maximum delivery radius
-        if (deliveryDistanceKm > restaurant.getMaxDeliveryRadiusKm()) {
-            System.out.println("Order Rejected: Restaurant is outside your delivery zone. (Max radius: "
-                    + restaurant.getMaxDeliveryRadiusKm() + " km, Your distance: " + deliveryDistanceKm + " km)");
-            return null;
-        }
+List<MenuItem> availableItems = menuItemRepository.findAvailableByRestaurantId(restaurantId);
+List<OrderItem> orderItems = new ArrayList<>();
+double foodSubtotal = 0.0;
 
-        List<MenuItem> availableItems = menuItemRepository.findAvailableByRestaurantId(restaurantId);
-        List<OrderItem> orderItems = new ArrayList<>();
-        double foodSubtotal = 0.0;
+for (CartItem cartItem : cart) {
+// US2.2: Reject invalid item quantities
+if (cartItem.getQuantity() <= 0) {
+System.out.println("Order Rejected: Invalid quantity (" + cartItem.getQuantity() + ").");
+return null;
+}
 
-        for (CartItem cartItem : cart) {
-            // US2.2: Reject invalid item quantities
-            if (cartItem.getQuantity() <= 0) {
-                System.out.println("Order Rejected: Invalid quantity (" + cartItem.getQuantity() + ").");
-                return null;
-            }
+// US2.2: Reject unavailable menu items
+MenuItem dbItem = availableItems.stream()
+    .filter(i -> i.getItemId() == cartItem.getItemId())
+    .findFirst()
+    .orElse(null);
 
-            // US2.2: Reject unavailable menu items
-            MenuItem dbItem = availableItems.stream()
-                    .filter(i -> i.getItemId() == cartItem.getItemId())
-                    .findFirst()
-                    .orElse(null);
+if (dbItem == null) {
+System.out.println("Order Rejected: Item ID " + cartItem.getItemId() + " is unavailable.");
+return null;
+}
 
-            if (dbItem == null) {
-                System.out.println("Order Rejected: Item ID " + cartItem.getItemId() + " is unavailable.");
-                return null;
-            }
+double itemSubtotal = dbItem.getPrice() * cartItem.getQuantity();
+foodSubtotal += itemSubtotal;
+orderItems.add(new OrderItem(dbItem.getItemId(), dbItem.getName(), cartItem.getQuantity(), dbItem.getPrice()));
+}
 
-            double itemSubtotal = dbItem.getPrice() * cartItem.getQuantity();
-            foodSubtotal += itemSubtotal;
-            orderItems.add(new OrderItem(dbItem.getItemId(), dbItem.getName(), cartItem.getQuantity(), dbItem.getPrice()));
-        }
+// US2.3: Reject if subtotal is below restaurant's minimum order value
+if (foodSubtotal < restaurant.getMinOrderValue()) {
+System.out.println("Order Rejected: Food subtotal ($" + foodSubtotal
+    + ") is below minimum order value ($" + restaurant.getMinOrderValue() + ").");
+return null;
+}
 
-        // US2.3: Reject if subtotal is below restaurant's minimum order value
-        if (foodSubtotal < restaurant.getMinOrderValue()) {
-            System.out.println("Order Rejected: Food subtotal ($" + foodSubtotal
-                    + ") is below minimum order value ($" + restaurant.getMinOrderValue() + ").");
-            return null;
-        }
+// US4.2: Calculate distance-based delivery fee
+double deliveryFee = DeliveryFeeCalculator.calculate(deliveryDistanceKm);
 
-        // US4.2: Calculate distance-based delivery fee
-        double deliveryFee = DeliveryFeeCalculator.calculate(deliveryDistanceKm);
+// US4.3: Apply dynamic pricing strategy
+double pricedTotal = pricingStrategy.apply(foodSubtotal, deliveryFee);
+double beforeDiscount = foodSubtotal + deliveryFee;
+double discountAmount = Math.max(0, beforeDiscount - pricedTotal);
+double finalTotal = Math.round(pricedTotal * 100.0) / 100.0;
 
-        // US4.3: Apply dynamic pricing strategy
-        double pricedTotal = pricingStrategy.apply(foodSubtotal, deliveryFee);
-        double beforeDiscount = foodSubtotal + deliveryFee;
-        double discountAmount = Math.max(0, beforeDiscount - pricedTotal);
-        double finalTotal = Math.round(pricedTotal * 100.0) / 100.0;
+// US5.1 & US5.2: Polymorphic Order Creation based on Order Type
+Order newOrder;
+String cleanType = (orderType != null) ? orderType.trim().toUpperCase() : "STANDARD";
 
-        // US5.1 & US5.2: Polymorphic Order Creation based on Order Type
-        Order newOrder;
-        String cleanType = (orderType != null) ? orderType.trim().toUpperCase() : "STANDARD";
+switch (cleanType) {
+case "EXPRESS":
+newOrder = new ExpressOrder(0, customer.getUserId(), restaurantId, "PENDING",
+        deliveryAddress.trim(), deliveryDistanceKm, foodSubtotal, deliveryFee, 
+        discountAmount, finalTotal, orderItems);
+break;
+case "SCHEDULED":
+newOrder = new ScheduledOrder(0, customer.getUserId(), restaurantId, "PENDING",
+        deliveryAddress.trim(), deliveryDistanceKm, foodSubtotal, deliveryFee, 
+        discountAmount, finalTotal, orderItems, scheduledTime);
+break;
+default:
+newOrder = new StandardOrder(0, customer.getUserId(), restaurantId, "PENDING",
+        deliveryAddress.trim(), deliveryDistanceKm, foodSubtotal, deliveryFee, 
+        discountAmount, finalTotal, orderItems);
+break;
+}
 
-        switch (cleanType) {
-            case "EXPRESS":
-                newOrder = new ExpressOrder(0, customer.getUserId(), restaurantId, "PENDING",
-                        deliveryAddress.trim(), deliveryDistanceKm, foodSubtotal, deliveryFee, 
-                        discountAmount, finalTotal, orderItems);
-                break;
-            case "SCHEDULED":
-                newOrder = new ScheduledOrder(0, customer.getUserId(), restaurantId, "PENDING",
-                        deliveryAddress.trim(), deliveryDistanceKm, foodSubtotal, deliveryFee, 
-                        discountAmount, finalTotal, orderItems, scheduledTime);
-                break;
-            default:
-                newOrder = new StandardOrder(0, customer.getUserId(), restaurantId, "PENDING",
-                        deliveryAddress.trim(), deliveryDistanceKm, foodSubtotal, deliveryFee, 
-                        discountAmount, finalTotal, orderItems);
-                break;
-        }
+// US5.2: Apply type-specific polymorphic rules (e.g. extra fee for Express, future time for Scheduled)
+newOrder.applyTypeRules();
 
-        // US5.2: Apply type-specific polymorphic rules (e.g. extra fee for Express, future time for Scheduled)
-        newOrder.applyTypeRules();
+// Save order to database
+boolean success = orderRepository.saveOrder(newOrder);
+if (success) {
+return newOrder;
+} else {
+System.out.println("Order Rejected: Failed to save order to database.");
+return null;
+}
+}
 
-        // Save order to database
-        boolean success = orderRepository.saveOrder(newOrder);
-        if (success) {
-            return newOrder;
-        } else {
-            System.out.println("Order Rejected: Failed to save order to database.");
-            return null;
-        }
-    }
+/**
+*  Sends confirmation email with invoice details AFTER payment succeeds.
+*/
+    public boolean sendOrderInvoiceEmail(User customer, Order order) {
+    	if (customer != null && customer.getEmail() != null && !customer.getEmail().trim().isEmpty() && order != null) {
+    	return emailService.sendOrderConfirmation(customer.getEmail(), order);
+    	}
+    	return false;
+    	}
+    	  
 
     /**
      * Overloaded placeOrder method for backward compatibility (defaults to "STANDARD" order type and "ASAP").

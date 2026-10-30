@@ -246,6 +246,26 @@ public class OrderRepository {
             "SELECT * FROM \"SWproject\".orders WHERE status NOT IN ('DELIVERED', 'CANCELLED') ORDER BY order_id"
         );
     }
+    public String findCustomerEmailByOrderId(int orderId) {
+        String sql = "SELECT u.email FROM \"SWproject\".orders o " +
+                     "JOIN \"SWproject\".users u ON o.customer_id = u.user_id " +
+                     "WHERE o.order_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, orderId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("email");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database Error in findCustomerEmailByOrderId: " + e.getMessage());
+        }
+        return null; // Return null if not found or on database exception
+    }
 
     // For Customer: Fetch this customer's active orders
     public List<Order> findActiveOrdersByCustomer(int customerId) {
