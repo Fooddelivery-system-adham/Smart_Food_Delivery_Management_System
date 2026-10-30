@@ -799,7 +799,7 @@ System.out.println("Invalid option.");
         System.out.print("Menu Item ID: ");
         int id = readInt(scanner);
         if (id < 0) {
-            System.out.println("Invalid ID.");
+            System.out.println("Invalid ID .");
             return;
         }
 
