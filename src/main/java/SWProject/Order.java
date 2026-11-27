@@ -69,7 +69,6 @@ public abstract class Order {
     public double getTotal() { 
         return total + additionalTypeFee; 
     }
-    // أضف هذه الدوال داخل Order.java
     public double getAdditionalTypeFee() {
         return additionalTypeFee;
     }

@@ -25,12 +25,10 @@ public class EmailService {
         Properties config = new Properties();
         boolean loaded = false;
 
-        // 1. تجربة القراءة من المجلد الرئيسي للـ Project
         try (FileInputStream fis = new FileInputStream("db.conf")) {
             config.load(fis);
             loaded = true;
         } catch (IOException ignored) {
-            // 2. إذا لم يجده، يجرب القراءة من src/main/resources/db.conf
             try (InputStream is = getClass().getClassLoader().getResourceAsStream("db.conf")) {
                 if (is != null) {
                     config.load(is);
