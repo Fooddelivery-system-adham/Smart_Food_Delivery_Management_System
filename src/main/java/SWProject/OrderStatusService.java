@@ -95,13 +95,12 @@ public class OrderStatusService {
             return StatusChangeResult.DATABASE_ERROR;
         }
 
-        // 📧 1. إرسال إيميل الاستلام النهائي إذا أصبحت الحالة DELIVERED
         if ("DELIVERED".equalsIgnoreCase(cleanStatus)) {
             String customerEmail = orderRepository.findCustomerEmailByOrderId(orderId);
             if (customerEmail != null && !customerEmail.trim().isEmpty()) {
                 emailService.sendOrderCompletedEmail(customerEmail, orderId);
             }
-        } // ⬅️ أصلحنا القوس المفقود هنا
+        } // ا
 
         // US3.3/US3.4: notify on every successful status change
         notificationService.notifyStatusChange(
